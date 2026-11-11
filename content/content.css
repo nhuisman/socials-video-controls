@@ -9,7 +9,8 @@
   height: 100% !important;
 }
 
-.ig-vc-player [role="slider"][aria-label="Adjust volume"] {
+.ig-vc-player [role="slider"][aria-label="Adjust volume"],
+.ig-vc-player [aria-label="Toggle audio"] {
   display: none !important;
 }
 
