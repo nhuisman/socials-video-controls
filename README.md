@@ -18,9 +18,9 @@ A minimal, high-performance browser extension that equips Instagram web videos a
 - **Seek Timeline Scrubber**: Smooth, responsive dragging to seek through any Instagram video or Reel with real-time current/total duration indicators (`mm:ss`).
 - **Persistent Volume Memory**: Remembers your preferred volume level and mute state across videos, reels, and browser restarts using local storage.
 - **Dynamic Speaker Icons**: Automatically updates volume icons (Muted, Low, Medium, High) based on audio levels using official Lucide vector paths.
-- **Playback Speed Selector**: Instant speed controls supporting `0.5x`, `0.75x`, `1x`, `1.25x`, `1.5x`, and `2x` playback rates.
-- **Viewport Visibility Auto-Pause**: Mirrors Instagram's native 50% viewport threshold to pause playback automatically when scrolled away and resume when brought back into focus.
+- **Playback Speed Selector**: Instant speed controls supporting `0.5x`, `0.75x`, `1x`, `1.25x`, `1.5x`, and `2x` playback rates (right-click to quickly reset to `1x`).
 - **Fullscreen Mode**: One-click native video fullscreen toggle with automated control-bar auto-hide on cursor idle.
+- **Background Tab Persistence**: Prevents Instagram from automatically pausing playback when you switch browser tabs.
 - **Zero Remote Code & Trackers**: 100% private and client-side. No analytics, no telemetry, no network calls, and no cookies accessed.
 
 ---
