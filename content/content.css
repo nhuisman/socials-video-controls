@@ -1,0 +1,247 @@
+/* Clip slide-up control bar to the video frame */
+.ig-vc-player {
+  overflow: hidden;
+}
+
+/* Keep Instagram's overlay full-height and hide its native mute button */
+.ig-vc-player [role="group"][aria-label="Video player"] {
+  bottom: 0 !important;
+  height: 100% !important;
+}
+
+.ig-vc-player [role="slider"][aria-label="Adjust volume"] {
+  display: none !important;
+}
+
+/* Smoothly slide Tagged Users (Feed) & bottom caption (Reels) up when control bar is visible */
+.ig-vc-player [role="group"][aria-label="Video player"] [role="button"] > div:has(> .html-div) {
+  overflow: visible !important;
+}
+
+.ig-vc-player [role="group"][aria-label="Video player"] > div:has(button),
+.ig-vc-player [role="group"][aria-label="Video player"] [role="button"] > div > .html-div {
+  transition: transform 0.18s ease !important;
+}
+
+.ig-vc-player:is(:hover:not(:fullscreen.idle), .dragging) [role="group"][aria-label="Video player"] > div:has(button),
+.ig-vc-player:is(:hover:not(:fullscreen.idle), .dragging) [role="group"][aria-label="Video player"] [role="button"] > div > .html-div {
+  transform: translateY(-28px) !important;
+}
+
+/* Fullscreen layout & idle cursor hiding */
+.ig-vc-player:fullscreen {
+  background: #000 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+.ig-vc-player:fullscreen.idle:not(.dragging) {
+  cursor: none !important;
+}
+
+.ig-vc-player:fullscreen video {
+  width: 100vw !important;
+  height: 100vh !important;
+  max-height: 100vh !important;
+  object-fit: contain !important;
+}
+
+/* Flush bottom vignette control bar */
+.ig-vc-bar {
+  position: absolute;
+  inset: auto 0 0 0;
+  z-index: 2147483647;
+  height: 28px;
+  padding: 0 8px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.42), rgba(0, 0, 0, 0.16) 60%, transparent);
+  color: #fff;
+  font: 400 11px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+  touch-action: none;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(28px);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+.ig-vc-player:is(:hover:not(:fullscreen.idle), .dragging) .ig-vc-bar {
+  pointer-events: auto;
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Buttons & thin Lucide icons */
+.ig-vc-btn {
+  all: unset;
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  cursor: pointer;
+  flex-shrink: 0;
+  opacity: 0.9;
+}
+
+.ig-vc-btn:hover {
+  opacity: 1;
+}
+
+.ig-vc-btn svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+.ig-vc-time {
+  color: rgba(255, 255, 255, 0.9);
+  white-space: nowrap;
+  flex-shrink: 0;
+  text-box: trim-both cap alphabetic;
+}
+
+/* Sliders (Horizontal Seek & Vertical Volume) */
+.ig-vc-seek {
+  flex: 1;
+  min-width: 48px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.ig-vc-track {
+  position: relative;
+  width: 100%;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.34);
+  border-radius: 99px;
+  overflow: hidden;
+  transition: height 0.12s ease, width 0.12s ease;
+}
+
+.ig-vc-seek:hover .ig-vc-track {
+  height: 4px;
+}
+
+.ig-vc-fill {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: var(--v, 0%);
+  height: 100%;
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 99px;
+}
+
+.ig-vc-seek:hover .ig-vc-fill,
+.ig-vc-vol:hover .ig-vc-fill {
+  background: #fff;
+}
+
+/* Hover Popups (Volume & Speed) */
+.ig-vc-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.ig-vc-popup {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  padding-bottom: 6px;
+  display: none;
+}
+
+.ig-vc-wrap:is(:hover, .dragging) .ig-vc-popup {
+  display: block;
+}
+
+.ig-vc-box {
+  width: 22px;
+  box-sizing: border-box;
+  background: rgba(0, 0, 0, 0.5);
+  border-radius: 5px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.ig-vc-vol {
+  width: 100%;
+  height: 64px;
+  padding: 6px 0;
+  display: flex;
+  justify-content: center;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.ig-vc-vol .ig-vc-track {
+  width: 2px;
+  height: 100%;
+}
+
+.ig-vc-vol:hover .ig-vc-track {
+  width: 4px;
+}
+
+.ig-vc-vol .ig-vc-fill {
+  width: 100%;
+  height: var(--v, 100%);
+}
+
+/* Speed Button & Vertical List */
+.ig-vc-speed-btn {
+  width: 28px;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 400;
+  text-box: trim-both cap alphabetic;
+}
+
+.ig-vc-speed-box {
+  width: auto;
+  padding: 3px;
+  gap: 1px;
+}
+
+.ig-vc-opt {
+  all: unset;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 3px 6px;
+  font-size: 10px;
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.72);
+  text-align: center;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.ig-vc-opt:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+}
+
+.ig-vc-opt.active {
+  background: rgba(255, 255, 255, 0.24);
+  color: #fff;
+}
