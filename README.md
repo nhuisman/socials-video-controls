@@ -7,6 +7,10 @@ A minimal, high-performance browser extension that equips Instagram web videos a
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Zero Dependencies](https://img.shields.io/badge/Dependencies-0%20(Pure%20JS%2FCSS)-success)](#architecture)
 
+<p align="center">
+  <img src="screenshot-1280x800.png" alt="Instagram Video Control preview" width="720">
+</p>
+
 ---
 
 ## Features
