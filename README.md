@@ -1,6 +1,6 @@
 # Instagram Video Control
 
-A minimal, high-performance browser extension that equips Instagram web videos and Reels with a full-featured playback control bar: timeline scrubber, persistent volume control, variable playback speeds, and auto-pause synchronization.
+A minimal, high-performance browser extension that equips Instagram web videos and Reels with a full-featured playback control bar: timeline scrubber, persistent volume control, variable playback speeds, and background tab persistence.
 
 [![Manifest](https://img.shields.io/badge/Manifest-V3-blue?logo=googlechrome&logoColor=white)](manifest.json)
 [![Platform](https://img.shields.io/badge/Platform-Microsoft%20Edge%20%7C%20Chrome-0078D4?logo=microsoftedge&logoColor=white)](https://learn.microsoft.com/en-us/microsoft-edge/extensions/)
