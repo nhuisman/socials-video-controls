@@ -14,18 +14,33 @@
   display: none !important;
 }
 
-/* Smoothly slide Tagged Users (Feed) & bottom caption (Reels) up when control bar is visible */
+/* Smoothly slide Tagged Users (Feed), bottom caption (Reels) & Watch This Series up when control bar is visible */
 .ig-vc-player [role="group"][aria-label="Video player"] [role="button"] > div:has(> .html-div) {
   overflow: visible !important;
 }
 
 .ig-vc-player [role="group"][aria-label="Video player"] > div:has(button),
-.ig-vc-player [role="group"][aria-label="Video player"] [role="button"] > div > .html-div {
+.ig-vc-player [role="group"][aria-label="Video player"] [role="button"] > div > .html-div,
+.ig-vc-series-overlay {
   transition: transform 0.18s ease !important;
 }
 
-.ig-vc-player:is(:hover:not(:fullscreen.idle), .dragging) [role="group"][aria-label="Video player"] > div:has(button),
-.ig-vc-player:is(:hover:not(:fullscreen.idle), .dragging) [role="group"][aria-label="Video player"] [role="button"] > div > .html-div {
+.ig-vc-player:is(:hover:not(:fullscreen.idle), .dragging),
+.ig-vc-host:has(.ig-vc-series-overlay:hover) .ig-vc-player:not(:fullscreen.idle) {
+  & .ig-vc-bar {
+    pointer-events: auto;
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  & [role="group"][aria-label="Video player"] > div:has(button),
+  & [role="group"][aria-label="Video player"] [role="button"] > div > .html-div {
+    transform: translateY(-28px) !important;
+  }
+}
+
+.ig-vc-host:has(.ig-vc-player:is(:hover:not(:fullscreen.idle), .dragging)) .ig-vc-series-overlay,
+.ig-vc-series-overlay:hover {
   transform: translateY(-28px) !important;
 }
 
@@ -69,12 +84,6 @@
   opacity: 0;
   transform: translateY(28px);
   transition: opacity 0.18s ease, transform 0.18s ease;
-}
-
-.ig-vc-player:is(:hover:not(:fullscreen.idle), .dragging) .ig-vc-bar {
-  pointer-events: auto;
-  opacity: 1;
-  transform: translateY(0);
 }
 
 /* Buttons & thin Lucide icons */

@@ -4,6 +4,8 @@
   window.__igVcCleanup?.();
   for (const el of document.querySelectorAll('.ig-vc-bar')) el.remove();
   for (const el of document.querySelectorAll('.ig-vc-player')) el.classList.remove('ig-vc-player');
+  for (const el of document.querySelectorAll('.ig-vc-host')) el.classList.remove('ig-vc-host');
+  for (const el of document.querySelectorAll('.ig-vc-series-overlay')) el.classList.remove('ig-vc-series-overlay');
 
   const DEFAULT_SETTINGS = { volume: 1, muted: false, playbackRate: 1 };
   const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
@@ -54,6 +56,25 @@
     }
     if (best && getComputedStyle(best).position === 'static') best.style.position = 'relative';
     return best;
+  }
+
+  function findSeriesOverlay(container) {
+    let cur = container;
+    for (let i = 0; i < 14 && cur && cur !== document.body; i++) {
+      if (cur.querySelectorAll('video').length > 1) break;
+      for (const link of cur.querySelectorAll('a[href*="/series/"][href*="/watch"]')) {
+        if (!/\/series\/[^/]+\/watch\b/.test(link.getAttribute('href') || '')) continue;
+        let overlay = link;
+        while (overlay.parentElement && overlay.parentElement !== cur) {
+          overlay = overlay.parentElement;
+        }
+        const pos = getComputedStyle(overlay).position;
+        if (pos !== 'absolute' && pos !== 'fixed') continue;
+        return { host: cur, overlay };
+      }
+      cur = cur.parentElement;
+    }
+    return null;
   }
 
   function bindSlider(el, isVertical, onInput, onStart, onEnd) {
@@ -191,6 +212,14 @@
     });
 
     let currentContainer = null;
+    let currentHost = null;
+    let currentSeriesOverlay = null;
+    const clearSeriesOverlay = () => {
+      currentHost?.classList.remove('ig-vc-host');
+      currentSeriesOverlay?.classList.remove('ig-vc-series-overlay');
+      currentHost = null;
+      currentSeriesOverlay = null;
+    };
     const mount = () => {
       if (hasNativeControls(video)) {
         destroy();
@@ -199,10 +228,23 @@
       }
       const container = video.isConnected && findPlayerContainer(video);
       if (container) {
+        if (currentContainer && currentContainer !== container) {
+          currentContainer.classList.remove('ig-vc-player');
+        }
         currentContainer = container;
         if (bar.parentElement !== container) {
           container.classList.add('ig-vc-player');
           container.appendChild(bar);
+        }
+        const series = findSeriesOverlay(container);
+        if (series?.host !== currentHost || series?.overlay !== currentSeriesOverlay) {
+          clearSeriesOverlay();
+          if (series) {
+            currentHost = series.host;
+            currentSeriesOverlay = series.overlay;
+            currentHost.classList.add('ig-vc-host');
+            currentSeriesOverlay.classList.add('ig-vc-series-overlay');
+          }
         }
       }
     };
@@ -211,6 +253,7 @@
       ro.disconnect();
       ac.abort();
       bar.remove();
+      clearSeriesOverlay();
       const container = currentContainer || (video.isConnected && findPlayerContainer(video));
       container?.classList.remove('ig-vc-player');
       currentContainer = null;
