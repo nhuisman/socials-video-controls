@@ -40,12 +40,14 @@
     try { await chrome.storage.local.set(partial); } catch (e) {}
   }
 
-  function hasNativeControls(video) {
-    const root = video.closest('article, [role="dialog"], [role="presentation"]') || video.parentElement;
-    return Boolean(root?.querySelector('[aria-label="Video progress"], [role="slider"][aria-label="Video progress"], [aria-label="Enter fullscreen"], [aria-label="Exit fullscreen"]'));
-  }
+  const NATIVE_CONTROLS_SELECTOR = [
+    '[aria-label="Video progress"]',
+    '[role="slider"][aria-valuetext]',
+    '[aria-label="Enter fullscreen"]',
+    '[aria-label="Exit fullscreen"]'
+  ].join(', ');
 
-  function findPlayerContainer(video) {
+  function resolvePlayerContainer(video) {
     let cur = video.parentElement;
     let best = cur;
     for (let i = 0; i < 14 && cur && cur !== document.body; i++) {
@@ -54,8 +56,18 @@
       if (cur.querySelector('[data-instancekey], [role="group"][aria-label="Video player"]')) break;
       cur = cur.parentElement;
     }
-    if (best && getComputedStyle(best).position === 'static') best.style.position = 'relative';
     return best;
+  }
+
+  function hasNativeControls(video, root = resolvePlayerContainer(video)) {
+    const scope = root || video.closest('article, [role="dialog"], [role="presentation"]') || video.parentElement;
+    if (!scope) return false;
+    return Boolean(scope.querySelector(NATIVE_CONTROLS_SELECTOR)) || scope.querySelectorAll('[role="slider"]').length > 1;
+  }
+
+  function ensureRelativeContainer(container) {
+    if (container && getComputedStyle(container).position === 'static') container.style.position = 'relative';
+    return container;
   }
 
   function findSeriesOverlay(container) {
@@ -221,13 +233,13 @@
       currentSeriesOverlay = null;
     };
     const mount = () => {
-      if (hasNativeControls(video)) {
+      const container = video.isConnected && resolvePlayerContainer(video);
+      if (hasNativeControls(video, container)) {
         destroy();
         controllers.delete(video);
         return;
       }
-      const container = video.isConnected && findPlayerContainer(video);
-      if (container) {
+      if (ensureRelativeContainer(container)) {
         if (currentContainer && currentContainer !== container) {
           currentContainer.classList.remove('ig-vc-player');
         }
@@ -254,7 +266,7 @@
       ac.abort();
       bar.remove();
       clearSeriesOverlay();
-      const container = currentContainer || (video.isConnected && findPlayerContainer(video));
+      const container = currentContainer || (video.isConnected && resolvePlayerContainer(video));
       container?.classList.remove('ig-vc-player');
       currentContainer = null;
     };
@@ -269,7 +281,7 @@
     speedBtn.addEventListener('contextmenu', () => saveSettings({ playbackRate: 1 }));
     fsBtn.addEventListener('click', () => {
       if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
-      else (findPlayerContainer(video) || video).requestFullscreen().catch(() => {});
+      else (currentContainer || ensureRelativeContainer(resolvePlayerContainer(video)) || video).requestFullscreen().catch(() => {});
     });
 
     for (const evt of ['play', 'playing', 'pause', 'volumechange', 'ratechange']) {
