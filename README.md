@@ -84,7 +84,7 @@ Read the full [Privacy Policy](PRIVACY.md).
 To package the extension for Microsoft Edge Add-ons or Chrome Web Store submission:
 
 ```powershell
-Compress-Archive -Path manifest.json, service-worker.js, icons, content -DestinationPath .\instagram-video-control.zip -Force
+tar -a -cf .\instagram-video-control.zip manifest.json service-worker.js icons content
 ```
 
 ---
