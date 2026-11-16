@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Instagram Video Control",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Minimal video control bar for Instagram with seek timeline, persistent volume, and playback speed.",
   "permissions": [
     "storage",
