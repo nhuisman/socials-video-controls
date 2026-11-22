@@ -723,6 +723,83 @@ group('A-B loop', () => {
   });
 });
 
+group('timeline zoom', () => {
+  test('shows the whole video when no loop is marked', () => {
+    const v = core.resolveTimelineView({ loopIn: null, loopOut: null, duration: 100, fps: 30 });
+    equal(v.start, 0);
+    equal(v.end, 100);
+    equal(v.zoomed, false);
+  });
+
+  test('shows the whole video when the loop is already a large share of it', () => {
+    const v = core.resolveTimelineView({ loopIn: 10, loopOut: 60, duration: 100, fps: 30 });
+    equal(v.zoomed, false, 'a 50% loop needs no zoom');
+    equal(v.end, 100);
+  });
+
+  test('zooms around a tight loop so the markers separate', () => {
+    // The case that prompted this: 1.5s marked in a 105s video.
+    const v = core.resolveTimelineView({ loopIn: 30, loopOut: 31.5, duration: 105, fps: 30 });
+    assert(v.zoomed, 'should zoom');
+    const beforeWidth = (31.5 - 30) / 105;
+    const afterWidth = (31.5 - 30) / (v.end - v.start);
+    assert(afterWidth > beforeWidth * 10, `loop went from ${(beforeWidth * 100).toFixed(1)}% to ${(afterWidth * 100).toFixed(1)}% of the bar`);
+    note(`a 1.5s loop in a 105s video goes from ${(beforeWidth * 100).toFixed(1)}% to ${(afterWidth * 100).toFixed(0)}% of the bar width`);
+  });
+
+  test('leaves room either side to drag a marker outwards', () => {
+    const v = core.resolveTimelineView({ loopIn: 30, loopOut: 32, duration: 105, fps: 30 });
+    assert(v.start < 30, 'window starts before A');
+    assert(v.end > 32, 'window ends after B');
+  });
+
+  test('slides rather than shrinks the window at the start of the video', () => {
+    const v = core.resolveTimelineView({ loopIn: 0, loopOut: 1.5, duration: 105, fps: 30 });
+    equal(v.start, 0, 'cannot start before zero');
+    assert(v.end > 1.5, 'window still extends past B');
+    close(v.end - v.start, 3, 1e-6, 'window keeps its width');
+  });
+
+  test('slides rather than shrinks the window at the end of the video', () => {
+    const v = core.resolveTimelineView({ loopIn: 103.5, loopOut: 105, duration: 105, fps: 30 });
+    equal(v.end, 105, 'cannot end past the duration');
+    assert(v.start < 103.5, 'window still extends before A');
+    close(v.end - v.start, 3, 1e-6, 'window keeps its width');
+  });
+
+  test('can be switched off', () => {
+    const v = core.resolveTimelineView({ loopIn: 30, loopOut: 31.5, duration: 105, fps: 30, disabled: true });
+    equal(v.zoomed, false);
+    equal(v.end, 105);
+  });
+
+  test('maps time to position and back within the window', () => {
+    const view = { start: 29, end: 33, zoomed: true };
+    close(core.timeToViewRatio(31, view), 0.5, 1e-9, 'midpoint');
+    close(core.timeToViewRatio(29, view), 0, 1e-9, 'start');
+    close(core.timeToViewRatio(33, view), 1, 1e-9, 'end');
+    close(core.viewRatioToTime(0.5, view), 31, 1e-9, 'back to time');
+    for (const t of [29, 30.25, 31, 32.75, 33]) {
+      close(core.viewRatioToTime(core.timeToViewRatio(t, view), view), t, 1e-9, `round-trip ${t}`);
+    }
+  });
+
+  test('clamps a position outside the window to an edge', () => {
+    const view = { start: 29, end: 33, zoomed: true };
+    equal(core.timeToViewRatio(5, view), 0, 'before the window');
+    equal(core.timeToViewRatio(90, view), 1, 'after the window');
+    equal(core.viewRatioToTime(-1, view), 29);
+    equal(core.viewRatioToTime(2, view), 33);
+  });
+
+  test('survives an unready video', () => {
+    const v = core.resolveTimelineView({ loopIn: 1, loopOut: 2, duration: NaN, fps: 30 });
+    equal(v.zoomed, false);
+    equal(core.timeToViewRatio(5, { start: 0, end: 0 }), 0, 'zero-width window');
+    equal(core.viewRatioToTime(0.5, { start: 0, end: 0 }), 0);
+  });
+});
+
 //#region Summary
 
 console.log('');

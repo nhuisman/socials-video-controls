@@ -178,13 +178,15 @@ The workflow this was built for: watch a dance video, find a move, bracket it, a
 4. Press `Home` at any time to jump back to the start, whether or not looping is on.
 5. `\` stops and starts looping; `|` clears both markers.
 
-The same four controls are on the bar: `A`, `B`, a loop toggle, and a jump-back-to-A button. Right-clicking the loop toggle clears the markers. They are available on Facebook too, where the rest of the bar is hidden, because looping is the point of the tool on a dance video.
+The same controls are on the bar: a loop toggle that carries the state, a jump-back-to-A button, and a popup on the toggle holding `A`, `B`, `clr` and the zoom switch. Right-clicking the loop toggle clears the markers. They are available on Facebook too, where most of the bar is hidden, because looping is the point of the tool on a dance video.
 
 ### Trim handles
 
 The marked segment is painted on the seek bar with a draggable handle at each end, the way a clip trimmer works. Grab either handle and slide it to move that marker — the video previews the frame you are trimming to as you drag, so you can see exactly where the segment starts or ends.
 
 - Handles appear as soon as their marker is set, so you can place A, drag it to taste, then place B.
+- **The timeline zooms automatically when the loop is tight.** A 1.5-second segment in a 105-second video is 1.4% of the bar, which puts both handles within about two pixels of each other and makes them impossible to aim at. When the marked span drops below a fifth of the video, the bar switches to a window around the loop so the segment takes up roughly half the width — the same markers end up about 75 pixels apart. The track is tinted and bracketed while zoomed, since it is then showing a slice rather than the whole video, and the window title names the range.
+- Everything on the bar reads through that window, so while zoomed the playhead drag is fine-grained too. The `fit` / `full` entry in the loop popup switches the zoom off when you want the whole video back for coarse navigation.
 - A handle cannot pass its partner: dragging the in point towards the out point stops three frames short, and vice versa.
 - Each position snaps to a frame centre, the same grid the arrow keys step along, so dragging and frame-stepping agree.
 - A press on a handle does not start a playhead scrub, even though the handle sits on the seek bar.

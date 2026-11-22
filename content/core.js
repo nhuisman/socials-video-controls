@@ -116,6 +116,58 @@
     return null;
   };
 
+  // The slice of the video the seek bar should represent.
+  //
+  // A tight loop on a long video is a couple of pixels wide, which makes the
+  // handles indistinguishable and impossible to aim at. When the marked span is
+  // a small fraction of the whole, the bar zooms to a window around it so the
+  // loop occupies a usable share of the width. Everything drawn on or read from
+  // the bar goes through this window, so positions stay consistent.
+  core.resolveTimelineView = ({ loopIn, loopOut, duration, fps, zoomBelow = 0.2, padFraction = 0.5, disabled = false }) => {
+    const full = { start: 0, end: Number.isFinite(duration) && duration > 0 ? duration : 0, zoomed: false };
+    if (disabled || !Number.isFinite(duration) || duration <= 0) return full;
+    if (!Number.isFinite(loopIn) || !Number.isFinite(loopOut)) return full;
+
+    const a = Math.min(loopIn, loopOut);
+    const b = Math.max(loopIn, loopOut);
+    const span = b - a;
+    if (span <= 0 || span / duration >= zoomBelow) return full;
+
+    // Pad so the loop sits in the middle of the window rather than filling it,
+    // leaving room to drag a marker outwards. The frame-based floor stops an
+    // extremely short loop zooming to a uselessly tiny window.
+    const pad = Math.max(span * padFraction, Number.isFinite(fps) && fps > 0 ? 4 / fps : 0);
+    let start = a - pad;
+    let end = b + pad;
+    const width = end - start;
+    // Running off either end slides the window rather than shrinking it, so the
+    // zoom level stays steady as the loop approaches the start or finish.
+    if (start < 0) {
+      start = 0;
+      end = Math.min(duration, width);
+    }
+    if (end > duration) {
+      end = duration;
+      start = Math.max(0, duration - width);
+    }
+    if (end - start <= 0) return full;
+    return { start, end, zoomed: end - start < duration - 1e-9 };
+  };
+
+  // Position within the current view, 0..1. Out-of-window times clamp to an
+  // edge rather than running off it.
+  core.timeToViewRatio = (time, view) => {
+    const span = view.end - view.start;
+    if (!(span > 0) || !Number.isFinite(time)) return 0;
+    return Math.min(1, Math.max(0, (time - view.start) / span));
+  };
+
+  core.viewRatioToTime = (ratio, view) => {
+    const span = view.end - view.start;
+    if (!(span > 0)) return view.start || 0;
+    return view.start + Math.min(1, Math.max(0, ratio)) * span;
+  };
+
   // Clamps a dragged loop marker so it stays inside the media and cannot cross
   // the other marker: an in point stops minFrames short of the out point, and
   // vice versa. Returns null when the video is not ready.

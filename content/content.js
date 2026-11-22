@@ -21,6 +21,8 @@
 
   // A-B loop, for practising a single move
   const LOOP_MIN_FRAMES = 3;
+  const ZOOM_BELOW_FRACTION = 0.2;
+  const ZOOM_PAD_FRACTION = 0.5;
   const KEYS_LOOP_IN = new Set(['[', '{']);
   const KEYS_LOOP_OUT = new Set([']', '}']);
   const KEYS_LOOP_TOGGLE = new Set(['\\']);
@@ -331,12 +333,16 @@
           ${SPEEDS.map((s) => `<button type="button" class="ig-vc-opt" data-speed="${s}">${s}x</button>`).join('')}
         </div></div>
       </div>
-      <div class="ig-vc-loop">
-        <button type="button" class="ig-vc-btn ig-vc-loop-in">A</button>
-        <button type="button" class="ig-vc-btn ig-vc-loop-out">B</button>
+      <div class="ig-vc-wrap ig-vc-loop-wrap">
         <button type="button" class="ig-vc-btn ig-vc-loop-toggle"></button>
-        <button type="button" class="ig-vc-btn ig-vc-loop-restart"></button>
+        <div class="ig-vc-popup"><div class="ig-vc-box ig-vc-loop-box">
+          <button type="button" class="ig-vc-opt ig-vc-loop-in">A</button>
+          <button type="button" class="ig-vc-opt ig-vc-loop-out">B</button>
+          <button type="button" class="ig-vc-opt ig-vc-loop-clear">clr</button>
+          <button type="button" class="ig-vc-opt ig-vc-loop-zoom">fit</button>
+        </div></div>
       </div>
+      <button type="button" class="ig-vc-btn ig-vc-loop-restart"></button>
       <button type="button" class="ig-vc-btn ig-vc-cache"></button>
       <button type="button" class="ig-vc-btn ig-vc-fs"></button>
     `;
@@ -345,6 +351,8 @@
       '.ig-vc-play', '.ig-vc-time', '.ig-vc-seek', '.ig-vc-mute', '.ig-vc-vol', '.ig-vc-speed-btn',
       '.ig-vc-loop-in', '.ig-vc-loop-out', '.ig-vc-loop-toggle', '.ig-vc-loop-restart', '.ig-vc-cache', '.ig-vc-fs'
     ].map((sel) => bar.querySelector(sel));
+    const loopClearBtn = bar.querySelector('.ig-vc-loop-clear');
+    const loopZoomBtn = bar.querySelector('.ig-vc-loop-zoom');
     const handleA = bar.querySelector('.ig-vc-handle-a');
     const handleB = bar.querySelector('.ig-vc-handle-b');
     const seekTrack = seekEl.querySelector('.ig-vc-track');
@@ -444,6 +452,7 @@
     let loopOut = null;
     let looping = false;
     let loopRafHandle = null;
+    let zoomDisabled = false;
 
     const loopRange = () => core.normalizeLoop({
       start: loopIn,
@@ -451,6 +460,18 @@
       duration: video.duration,
       fps: frameClock.fps,
       minFrames: LOOP_MIN_FRAMES
+    });
+
+    // The window the seek bar currently represents. Everything painted on the
+    // bar and every position read back from it goes through this.
+    const currentView = () => core.resolveTimelineView({
+      loopIn,
+      loopOut,
+      duration: video.duration,
+      fps: frameClock.fps,
+      zoomBelow: ZOOM_BELOW_FRACTION,
+      padFraction: ZOOM_PAD_FRACTION,
+      disabled: zoomDisabled
     });
 
     // End of the buffered range covering a given time, which is how far stepping
@@ -514,11 +535,18 @@
         ? 'Set A first, then this jumps back to it'
         : `Jump back to ${formatTime(loopIn, 2)}  Home`;
 
+      const view = currentView();
+      loopZoomBtn.textContent = view.zoomed ? 'full' : 'fit';
+      loopZoomBtn.classList.toggle('active', zoomDisabled);
+      loopZoomBtn.title = view.zoomed
+        ? `Timeline zoomed to ${formatTime(view.start)}–${formatTime(view.end)} — show the whole video instead`
+        : 'Zoom the timeline around a tight loop so the markers are easier to aim at';
+
       fsBtn.innerHTML = document.fullscreenElement?.contains(video) ? ICONS.minimize : ICONS.maximize;
     }
 
     const renderTime = (t) => (frameMode
-      ? `${formatTime(t, 2)} / ${formatTime(video.duration)} · f${Math.floor(t * frameClock.fps + 1e-6)}`
+      ? `${formatTime(t, 2)} · f${Math.floor(t * frameClock.fps + 1e-6)}`
       : `${formatTime(t)} / ${formatTime(video.duration)}`);
 
     // Issues at most one drag seek at a time and always aims at the newest pointer
@@ -552,21 +580,27 @@
     // at pointer rate without the cost of a full sync() on every move.
     const paintLoopMarks = () => {
       if (!Number.isFinite(video.duration) || video.duration <= 0) return;
-      seekEl.style.setProperty('--la', `${(((loopIn ?? 0) / video.duration) * 100).toFixed(2)}%`);
-      seekEl.style.setProperty('--lb', `${(((loopOut ?? 0) / video.duration) * 100).toFixed(2)}%`);
+      const view = currentView();
+      seekEl.style.setProperty('--la', `${(core.timeToViewRatio(loopIn ?? 0, view) * 100).toFixed(2)}%`);
+      seekEl.style.setProperty('--lb', `${(core.timeToViewRatio(loopOut ?? 0, view) * 100).toFixed(2)}%`);
       seekEl.classList.toggle('has-a', loopIn !== null);
       seekEl.classList.toggle('has-b', loopOut !== null);
       seekEl.classList.toggle('has-loop', Boolean(loopRange()));
+      seekEl.classList.toggle('zoomed', view.zoomed);
+      seekEl.title = view.zoomed
+        ? `Timeline zoomed to ${formatTime(view.start)}–${formatTime(view.end)} for marker precision`
+        : '';
     };
 
     const updateTime = () => {
       if (!Number.isFinite(video.duration) || video.duration <= 0) return;
-      seekEl.style.setProperty('--b', `${((bufferedEndNear(video.currentTime) / video.duration) * 100).toFixed(1)}%`);
+      const view = currentView();
+      seekEl.style.setProperty('--b', `${(core.timeToViewRatio(bufferedEndNear(video.currentTime), view) * 100).toFixed(1)}%`);
       paintLoopMarks();
       // Mid-drag the pointer owns the fill and the readout, so leave both alone;
       // overwriting them here would snap the bar back to the lagging decoder.
       if (dragTargetTime !== null) return;
-      if (!isSeeking()) seekEl.style.setProperty('--v', `${((video.currentTime / video.duration) * 100).toFixed(1)}%`);
+      if (!isSeeking()) seekEl.style.setProperty('--v', `${(core.timeToViewRatio(video.currentTime, view) * 100).toFixed(1)}%`);
       timeEl.textContent = renderTime(video.currentTime);
     };
 
@@ -589,7 +623,8 @@
         // paced, so the bar stays responsive even when the picture lags behind it.
         seekEl.style.setProperty('--v', `${(ratio * 100).toFixed(1)}%`);
         if (Number.isFinite(video.duration) && video.duration > 0) {
-          dragTargetTime = Math.min(video.duration, Math.max(0, ratio * video.duration));
+          // Through the view window, so dragging is fine-grained while zoomed.
+          dragTargetTime = core.viewRatioToTime(ratio, currentView());
           dragDirty = true;
           timeEl.textContent = renderTime(dragTargetTime);
           flushDragSeek();
@@ -793,8 +828,9 @@
       if (rect.width <= 0) return;
       const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
       // Snapped to a frame centre so a marker always sits on the arrow keys' grid.
+      // Read through the view window, which is what makes a tight loop editable.
       const snapped = core.frameCenter(
-        core.frameIndexAt(ratio * video.duration, frameClock.fps),
+        core.frameIndexAt(core.viewRatioToTime(ratio, currentView()), frameClock.fps),
         frameClock.fps
       );
       const clamped = core.clampMarker({
@@ -1180,6 +1216,13 @@
     loopOutBtn.addEventListener('click', setLoopOut);
     loopToggleBtn.addEventListener('click', toggleLoop);
     loopToggleBtn.addEventListener('contextmenu', clearLoop);
+    loopClearBtn.addEventListener('click', clearLoop);
+    loopZoomBtn.addEventListener('click', () => {
+      zoomDisabled = !zoomDisabled;
+      revealBar(true);
+      sync();
+      updateTime();
+    });
     loopRestartBtn.addEventListener('click', restartLoop);
     cacheBtn.addEventListener('click', () => {
       if (cacheState === 'loading') {

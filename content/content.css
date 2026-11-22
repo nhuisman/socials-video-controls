@@ -100,7 +100,7 @@
   transform: translateY(-100%);
 }
 
-.ig-vc-bar.ig-vc-augment > :not(.ig-vc-time, .ig-vc-loop, .ig-vc-seek) {
+.ig-vc-bar.ig-vc-augment > :not(.ig-vc-time, .ig-vc-seek, .ig-vc-loop-wrap, .ig-vc-loop-restart) {
   display: none !important;
 }
 
@@ -167,28 +167,26 @@
   border-radius: 99px;
 }
 
-/* Loop controls, grouped so augment mode can keep them while hiding the rest */
-.ig-vc-loop {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  flex-shrink: 0;
+/* A zoomed timeline shows a slice of the video, not the whole of it, so the
+   track is marked to make that obvious rather than silently misleading. */
+.ig-vc-seek.zoomed .ig-vc-track {
+  background: rgba(120, 200, 255, 0.22);
+  box-shadow: inset 1px 0 0 rgba(120, 200, 255, 0.8), inset -1px 0 0 rgba(120, 200, 255, 0.8);
 }
 
-.ig-vc-loop-in,
-.ig-vc-loop-out {
-  width: 15px;
-  font-size: 10px;
-  font-weight: 600;
-  text-align: center;
-  opacity: 0.7;
-  text-box: trim-both cap alphabetic;
+/* Loop controls: the toggle carries state and the rest live in a popup, so the
+   bar keeps enough slack for the cache and fullscreen buttons on a narrow
+   player. Jump-back stays out on the bar because a practice loop uses it most. */
+.ig-vc-loop-box {
+  width: auto;
+  padding: 3px;
+  gap: 1px;
 }
 
 .ig-vc-loop-in.active,
 .ig-vc-loop-out.active {
-  opacity: 1;
-  color: rgb(120, 200, 255);
+  background: rgba(120, 200, 255, 0.3);
+  color: rgb(170, 220, 255);
 }
 
 .ig-vc-loop-toggle,
@@ -238,7 +236,14 @@
 .ig-vc-time {
   color: rgba(255, 255, 255, 0.9);
   white-space: nowrap;
-  flex-shrink: 0;
+  /* Shrinks only after the seek bar has reached its minimum, so on a very
+     narrow player the readout truncates instead of pushing the buttons on the
+     right out of view. A clipped timestamp is a better failure than a missing
+     fullscreen control. */
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   text-box: trim-both cap alphabetic;
 }
 
