@@ -2,7 +2,7 @@
 
 A browser extension that adds video playback controls to Instagram and frame-accurate navigation to both Instagram and Facebook: a timeline scrubber, persistent volume, playback speed, frame-by-frame stepping, smooth jog scrubbing, and optional whole-video caching.
 
-> **Fork notice.** This project began as [Instagram Video Control](https://git.skp.my.id/surya/instagram-video-control) by Surya Kencana Putra, MIT licensed, and retains that license and copyright notice. It has since diverged substantially: frame-accurate stepping, jog scrubbing, live drag scrubbing, a whole-video cache, a test suite, and Facebook support were added here. It is unrelated to the similarly named [Arcus92/instagram-video-control](https://github.com/Arcus92/instagram-video-control), which is an independent project.
+> **Fork notice.** This project began as [Instagram Video Control](https://git.skp.my.id/surya/instagram-video-control) by Surya Kencana Putra, MIT licensed, and retains that license and copyright notice. It has since diverged substantially: frame-accurate stepping, jog scrubbing, live drag scrubbing, A-B loop practice, clip export, theater mode, a test suite, and Facebook support were added here. It is unrelated to the similarly named [Arcus92/instagram-video-control](https://github.com/Arcus92/instagram-video-control), which is an independent project.
 
 [![Manifest](https://img.shields.io/badge/Manifest-V3-blue?logo=googlechrome&logoColor=white)](manifest.json)
 [![Platform](https://img.shields.io/badge/Platform-Microsoft%20Edge%20%7C%20Chrome-0078D4?logo=microsoftedge&logoColor=white)](https://learn.microsoft.com/en-us/microsoft-edge/extensions/)
@@ -20,7 +20,8 @@ A browser extension that adds video playback controls to Instagram and frame-acc
 - **Seek Timeline Scrubber**: Click and drag the progress bar to scrub, with the picture updating live as you move rather than only on release.
 - **Frame-by-Frame Stepping**: Press `←` and `→` to walk a video one frame at a time (hold `Shift` for 10, or hold the key to scrub continuously). The true frame rate is measured from the video itself, so steps land on real frame boundaries instead of drifting.
 - **Space to Resume**: `Space` toggles play/pause on the player you are working with, so playback picks back up after stepping without reaching for the mouse.
-- **Optional Whole-Video Cache**: A download button on the control bar pulls the entire video into memory, after which scrubbing and frame stepping never wait on the network. Off by default, released the moment you leave the video.
+- **Clip Export**: With a loop marked, save that segment as a video file and review it in theater mode. Recorded locally from the player's own output; nothing is uploaded.
+- **Theater Mode**: Covers the page so only the video is visible, without hiding the browser's tabs and address bar. Real fullscreen is available from its menu.
 - **Persistent Volume Memory**: Remembers your preferred volume level and mute state across videos, reels, and browser restarts using local storage.
 - **Dynamic Speaker Icons**: Automatically updates volume icons (Muted, Low, Medium, High) based on audio levels using official Lucide vector paths.
 - **Playback Speed Selector**: Instant speed controls supporting `0.5x`, `0.75x`, `1x`, `1.25x`, `1.5x`, and `2x` playback rates (right-click to quickly reset to `1x`).
@@ -56,6 +57,7 @@ A browser extension that adds video playback controls to Instagram and frame-acc
 | `←` / `→` hold | Smooth jog scrub at half speed |
 | `Shift` + hold | Smooth jog scrub at double speed |
 | `Space` | Play / pause |
+| `t` | Theater mode |
 | `[` | Set loop start (A) at the current frame |
 | `]` | Set loop end (B) at the current frame |
 | `\` | Toggle looping |
@@ -119,37 +121,58 @@ Dragging will not feel as smooth as the forward jog scrub, which avoids seeking 
 
 ---
 
-## Whole-Video Cache
+## Exporting a Clip
 
-Longer videos are the case where seeking genuinely does hit the network: the browser only keeps part of a several-minute file buffered, so scrubbing into an unbuffered region waits on a range request. The download button on the control bar removes that wait.
+With a loop marked, the download button saves that segment as a video file and
+opens it in theater mode so the move can be studied straight away.
 
-Clicking it fetches the entire video file once, shows progress as a percentage in place of the icon, then repoints the video element at an in-memory copy. From that moment every seek is served locally and the buffer bar reads full. Click again to release it. Clicking during the download cancels it.
+Recording is **real time by necessity**. Both sites stream through Media Source
+Extensions, so there is no file sitting behind the player to slice: the only
+available source is the element's own rendered output, captured through
+`captureStream` into a `MediaRecorder`. A 4-second loop therefore takes about 4
+seconds to record, and the loop plays through once while it happens.
 
-| Button state | Meaning |
-| :--- | :--- |
-| Download icon | Not cached; click to pre-download |
-| `42%` | Downloading; click to cancel |
-| Check icon | Cached in memory; click to release |
-| Dimmed icon | Unavailable for this video, or the last attempt failed |
+- Recorded at **1x** regardless of the practice speed, so the clip is the move as
+  filmed. Any player can slow it down afterwards.
+- Audio is included, because for a dance clip the music is half the point. The
+  video is unmuted for the recording and put back as it was.
+- Output is WebM. Browsers that record from a video element produce a streamed
+  container with no duration header, so some tools report the length as unknown.
+- Clips are capped at 60 seconds.
+- The filename names the site, the video and the bounds, for example
+  `facebook-1046756455114845-20p02-22p52.webm`.
+- The button is **hidden until both A and B are set**, since it means nothing
+  without a segment. An unexplained greyed-out button is worse than no button.
 
-### Cost and limits
-
-- **Memory.** The video is held as a blob for as long as it stays cached — roughly 60–120 MB for a typical 2–4 minute Instagram video. Downloads above 256 MB are refused rather than allowed to exhaust the tab.
-- **Lifetime.** Memory only. Nothing is written to disk, and the copy is dropped when you release it, navigate away, or the video scrolls out of view and its player is torn down. Instagram recycles `<video>` elements between posts, so the extension also detects when an element has been reclaimed and frees the cache with it.
-- **Segmented videos cannot be cached.** When Instagram streams a video through Media Source Extensions, the element's source is a `blob:` URL fed by Instagram's own JavaScript rather than a fetchable file. There is nothing to download, and overwriting the source would break their player, so the button reports the video as unavailable and issues no request.
-- **This removes network waits, not decode cost.** Inter-frame compression means a seek still decodes forward from the nearest keyframe, which is why stepping backwards stays slower than stepping forwards even when fully cached.
-
-### What it means for privacy
-
-This feature is the extension's only network request, and the first in its history. It asks for the same video file the page is already playing, from the same Instagram address, with cookies deliberately omitted. It is opt-in per video, never automatic, and sends no information anywhere. Caching requires no additional permissions. See the [Privacy Policy](PRIVACY.md) for the full statement.
+Everything happens locally. The extension makes no network requests at all.
 
 ---
+
+## Theater Mode
+
+The fullscreen button opens **theater mode**: a page overlay that covers
+everything so only the video is visible, while leaving the browser's own tabs
+and address bar exactly where they are. Press `t`, or right-click the button, for
+the same thing.
+
+Real browser fullscreen is one click further in, from the overlay's own menu.
+That is deliberate: a click inside the overlay is a fresh user gesture, which is
+what `requestFullscreen` requires and what a recording several seconds long no
+longer has by the time it finishes.
+
+Theater mode **relocates the live player** rather than cloning it. A
+MediaSource blob URL can only be attached to one element, so a second `<video>`
+pointed at the page's source loads nothing at all. Moving the player container
+also brings this extension's own control bar along, so the loop controls stay
+usable in theater mode. The player is put back exactly where it was on close.
+
+Dismiss with `Esc`, the close button, or a click on the backdrop.
 
 ## Supported Sites
 
 | Site | Mode | What you get |
 | :--- | :--- | :--- |
-| Instagram | **Replace** | Full control bar: seek timeline, volume, speed, fullscreen, whole-video cache, plus frame stepping and jog scrubbing |
+| Instagram | **Replace** | Full control bar: seek timeline, volume, speed, theater mode, A-B loop with clip export, frame stepping and jog scrubbing |
 | Facebook | **Augment** | Frame stepping, jog scrubbing and a frame readout only — Facebook's own player is left completely intact |
 
 The two modes exist because the sites differ. Instagram ships almost no video controls, so there is nothing to compete with and the bar replaces the gap. Facebook already ships a full player — progress bar, volume, fullscreen, quality — so duplicating it would be redundant and would fight their controls. On Facebook the extension contributes only what is missing and suppresses nothing.
@@ -162,7 +185,6 @@ Verified against a live Reel rather than assumed:
 
 - **`data-video-id` is the anchor.** It is language-independent, already `position: relative`, contains exactly one video, and — unlike the ancestors above it — contains none of Facebook's own sliders. Walking the DOM the way the Instagram adapter does overshoots and reaches Facebook's progress slider, which would look like a competing player and suppress the extension entirely.
 - **Volume, mute and speed are Facebook's.** A volume written by the extension is reverted by their player within a second, so in augment mode the extension does not assert any of them. A jog scrub still mutes briefly, then restores whatever was actually in effect rather than the extension's saved preference.
-- **The whole-video cache does not apply.** Facebook streams through Media Source Extensions, so there is no fetchable file behind the player.
 - **Frame stepping, jog scrubbing and frame-rate detection all work.** Seeks land and hold, Facebook does not fight `currentTime`, `playbackRate` sticks, and the frame rate measured off a real Reel came out at 30.0003 fps, snapping correctly to 30.
 - **Facebook sometimes re-pauses a video it did not start.** A bare `play()` with the extension uninvolved behaves identically, so this is their player's behaviour rather than an extension bug. It can make `Space` appear not to resume.
 
@@ -242,6 +264,7 @@ On Facebook the extension shows a compact 150px trim timeline for this purpose. 
 - **Very short loops are refused.** A range under three frames thrashes the decoder and shows nothing useful, so the loop toggle stays disabled until the span is worth playing.
 - **Restarts are paced** through the same single-seek-in-flight path as everything else, so a tight loop cannot issue a new seek before the last one landed.
 - **Slow it down.** The loop speed menu on the loop button is the control for this. On Instagram the bar's separate speed control still sets the general playback speed; on Facebook that one belongs to their player.
+- **Export it.** The download button saves the marked segment and opens it in theater mode.
 - Markers belong to the video. They clear when the player loads something else, since Instagram and Facebook both recycle `<video>` elements between posts.
 
 ---

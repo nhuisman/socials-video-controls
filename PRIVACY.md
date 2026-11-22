@@ -14,7 +14,7 @@ This Privacy Policy explains how **Socials Video Controls** ("the Extension") ha
 - We do not transmit any information about you, your activity, or your device to anyone.
 - We do not sell or monetize user data in any form.
 
-The Extension makes exactly one kind of network request, and only when you ask it to: the optional video cache described in section 2 re-requests the video file you are already watching. No request is ever sent to a server operated by the developer or by any third party, and no data about you leaves your browser.
+The Extension makes no network requests of any kind. Everything it does happens locally in your browser.
 
 ---
 
@@ -29,18 +29,14 @@ No additional permissions are requested for the video cache feature.
 
 ---
 
-### 2a. Optional Video Cache
-The control bar includes a download button that pre-loads the current video so you can scrub through it without waiting. When — and only when — you click that button:
+### 2a. Clip Export
+The loop controls can record the marked segment and save it as a video file:
 
-- The Extension re-requests **the same video file your browser is already playing**, from the same content delivery address the page itself used. It does not contact any other server.
-- The request is sent **without cookies or credentials** (`credentials: 'omit'`).
-- The downloaded video is held **in memory only** for the lifetime of that page. Nothing is written to disk, to `chrome.storage`, or to any database.
-- The copy is discarded automatically when you click the button again, when you navigate away, or when the video scrolls out of view. It is never retained between page loads or browser sessions.
-- Videos that Instagram streams in segments cannot be cached, and in that case the button reports that it is unavailable and no request is made at all.
+- Recording captures the player's own output locally, in your browser. Nothing is uploaded, and no server is contacted.
+- The file is saved by your browser's normal download mechanism, to wherever you have told it to put downloads.
+- The recording exists only for as long as it takes to save and show it, and is discarded when you close the preview.
 
-Caching is never enabled automatically and is off by default.
-
----
+Recording never starts on its own; it happens only when you click the control.
 
 ### 2b. Page URL and Clipboard
 The loop feature can share a marked segment as a link:
@@ -51,7 +47,7 @@ The loop feature can share a marked segment as a link:
 ---
 
 ### 3. Third-Party Services
-The Extension operates entirely within your browser client and does not bundle or load any third-party analytics, advertisements, or tracking libraries. It contains no remote code, no `eval`, and no connection to any server other than the optional, user-initiated video request described in section 2a.
+The Extension operates entirely within your browser client and does not bundle or load any third-party analytics, advertisements, or tracking libraries. It contains no remote code, no `eval`, and makes no connection to any server.
 
 ---
 

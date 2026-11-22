@@ -107,14 +107,6 @@
     return 'seek';
   };
 
-  // Why a video cannot be cached, or null when it can. A blob:/MediaSource
-  // source has no fetchable file behind it, and overwriting it would break
-  // Instagram's own player.
-  core.cacheRejectReason = ({ source, bytes, maxBytes }) => {
-    if (!source || source.startsWith('blob:') || source.startsWith('mediasource:')) return 'unsupported';
-    if (Number.isFinite(bytes) && bytes > maxBytes) return 'too-large';
-    return null;
-  };
 
   // The slice of the video the seek bar should represent, as a transition from
   // the window currently in use rather than a fresh calculation each time.
@@ -207,6 +199,34 @@
     const span = view.end - view.start;
     if (!(span > 0)) return view.start || 0;
     return view.start + Math.min(1, Math.max(0, ratio)) * span;
+  };
+
+  // Chooses the first container the browser will actually record. Passing the
+  // support check in keeps this testable without a MediaRecorder.
+  core.pickRecorderMime = (candidates, isSupported) => {
+    if (!Array.isArray(candidates) || typeof isSupported !== 'function') return null;
+    for (const candidate of candidates) {
+      try {
+        if (isSupported(candidate)) return candidate;
+      } catch (e) {
+        // A malformed candidate should be skipped, not fatal.
+      }
+    }
+    return null;
+  };
+
+  // Filename for an exported clip: site, video identifier where the path offers
+  // one, and the loop bounds, so saved clips sort and identify themselves.
+  core.clipFilename = (hostname, pathname, start, end, extension = 'webm') => {
+    const site = core.resolveSiteKey(hostname) || 'video';
+    const slug = typeof pathname === 'string'
+      ? (pathname.match(/\/(?:p|reel|reels|watch|tv)\/([A-Za-z0-9_-]{3,})/) || [])[1] || ''
+      : '';
+    const stamp = (n) => (Number.isFinite(n) && n >= 0 ? n.toFixed(2).replace('.', 'p') : '0p00');
+    const parts = [site];
+    if (slug) parts.push(slug);
+    parts.push(`${stamp(start)}-${stamp(end)}`);
+    return `${parts.join('-')}.${extension}`;
   };
 
   // Reads loop times out of a URL fragment, in the form

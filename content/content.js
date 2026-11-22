@@ -40,6 +40,7 @@
   const KEYS_LOOP_TOGGLE = new Set(['\\']);
   const KEYS_LOOP_RESTART = new Set(['Home']);
   const KEYS_LOOP_CLEAR = new Set(['|']);
+  const KEYS_THEATER = new Set(['t', 'T']);
   const SHIFT_FRAME_MULTIPLIER = 10;
   const KEYS_FRAME_BACK = new Set(['ArrowLeft']);
   const KEYS_FRAME_FORWARD = new Set(['ArrowRight']);
@@ -51,15 +52,6 @@
   const SCRUB_RATE_FAST = 2;
   const SCRUB_MAX_CATCHUP_FRAMES = 3;
 
-  // Whole-file cache
-  const CACHE_MAX_BYTES = 256 * 1024 * 1024;
-  const CACHE_TITLES = {
-    idle: 'Pre-download this video for load-free scrubbing',
-    loading: 'Downloading — click to cancel',
-    ready: 'Cached in memory — click to release',
-    unsupported: 'This video is streamed in segments by Instagram and cannot be pre-downloaded',
-    error: 'Download failed — click to retry'
-  };
 
   // Official Lucide v1.61.0 icon paths
   const svg = (body) => `<svg viewBox="0 0 24 24">${body}</svg>`;
@@ -73,9 +65,8 @@
     volume2: svg(`${SPEAKER}<path d="M16 9a5 5 0 0 1 0 6"/><path d="M19.364 18.364a9 9 0 0 0 0-12.728"/>`),
     maximize: svg(`<path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/>`),
     minimize: svg(`<path d="M8 3v3a2 2 0 0 1-2 2H3"/><path d="M21 8h-3a2 2 0 0 1-2-2V3"/><path d="M3 16h3a2 2 0 0 1 2 2v3"/><path d="M16 21v-3a2 2 0 0 1 2-2h3"/>`),
-    // Original thin-stroke glyphs for the cache control, drawn to match the set above
+    // Original thin-stroke glyph for the clip export control, matching the set above
     download: svg(`<path d="M12 4v11"/><path d="m7 12 5 5 5-5"/><path d="M5 20h14"/>`),
-    cached: svg(`<path d="m6 11 4 4 8-9"/><path d="M5 20h14"/>`),
     loop: svg(`<path d="M3 11V9a4 4 0 0 1 4-4h11"/><path d="m15 2 3 3-3 3"/><path d="M21 13v2a4 4 0 0 1-4 4H6"/><path d="m9 22-3-3 3-3"/>`),
     restart: svg(`<path d="M6 5v14"/><path d="M20 5 9 12l11 7z"/>`)
   };
@@ -189,6 +180,154 @@
   // video in a feed. The launch URL is read from the document_start capture,
   // falling back to the live location where the site has not rewritten it.
   let pendingUrlLoop = core.parseLoopFromUrl(window.__igVcLaunchUrl?.hash || location.hash);
+
+  // Exported loop clips. Recording is real time and captures the element's
+  // rendered output, since both sites stream through MediaSource and there is no
+  // file to slice. Verified on a live Reel: captureStream yields live audio and
+  // video tracks, and MediaRecorder produces a decodable 540x960 WebM.
+  const CLIP_MIME_CANDIDATES = [
+    'video/webm;codecs=vp9,opus',
+    'video/webm;codecs=vp8,opus',
+    'video/webm'
+  ];
+  const CLIP_MAX_SECONDS = 60;
+  const CLIP_LEAD_IN_MS = 350;
+  const CLIP_TITLES = {
+    idle: 'Record this loop and save it as a clip',
+    recording: 'Recording the loop in real time — click to cancel',
+    unavailable: 'Set both A and B to export a clip',
+    unsupported: 'This browser cannot record from a video element',
+    error: 'Recording failed — click to retry'
+  };
+
+  // Theater overlay: covers the page so only the video is visible, while leaving
+  // the browser's own chrome alone. Requested in preference to real fullscreen,
+  // which hides the tabs and address bar; this is a page-level overlay, so the
+  // browser stays exactly as it is. Also where a freshly recorded clip opens.
+  let theaterEl = null;
+  // When the overlay adopts the live player instead of playing a standalone
+  // file, this records where to put it back.
+  let theaterAdopted = null;
+
+  const downloadUrl = (url, filename) => {
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  };
+
+  const onTheaterKey = (e) => {
+    if (e.key !== 'Escape') return;
+    e.preventDefault();
+    e.stopPropagation();
+    closeTheater();
+  };
+
+  function closeTheater() {
+    if (!theaterEl) return;
+    // Put an adopted player back exactly where it was, before the overlay goes.
+    if (theaterAdopted) {
+      const { element, parent, nextSibling } = theaterAdopted;
+      element.classList.remove('ig-vc-theater-adopted');
+      if (parent && parent.isConnected) parent.insertBefore(element, nextSibling || null);
+      theaterAdopted = null;
+    }
+    const held = theaterEl.querySelector('.ig-vc-theater-video');
+    if (held) {
+      held.pause();
+      held.removeAttribute('src');
+      held.load();
+    }
+    // Leaving real fullscreen first, or the browser is left in fullscreen with
+    // nothing in it.
+    if (document.fullscreenElement === theaterEl) document.exitFullscreen().catch(() => {});
+    // Only a blob we created gets revoked; a page URL must be left alone.
+    const revoke = theaterEl.dataset.revokeUrl;
+    theaterEl.remove();
+    theaterEl = null;
+    document.removeEventListener('keydown', onTheaterKey, true);
+    document.removeEventListener('fullscreenchange', onTheaterFullscreenChange);
+    if (revoke) URL.revokeObjectURL(revoke);
+  }
+
+  function onTheaterFullscreenChange() {
+    if (!theaterEl) return;
+    const button = theaterEl.querySelector('.ig-vc-theater-fs');
+    if (!button) return;
+    const isFull = document.fullscreenElement === theaterEl;
+    button.textContent = isFull ? 'exit fullscreen' : 'fullscreen';
+    button.title = isFull
+      ? 'Leave real fullscreen and go back to covering the page'
+      : 'Enter real browser fullscreen, hiding the tabs and address bar too';
+  }
+
+  // Two modes. `adopt` relocates the live player into the overlay, which is the
+  // only way to show a MediaSource-backed video: its blob URL can be attached
+  // to exactly one element, so a second <video> pointed at the same URL loads
+  // nothing. `src` plays a standalone file, which is how a recorded clip opens.
+  function openTheater({ adopt = null, src = null, revokeUrl = null, filename = null, label = '' }) {
+    closeTheater();
+    theaterEl = document.createElement('div');
+    theaterEl.className = 'ig-vc-theater';
+    if (revokeUrl) theaterEl.dataset.revokeUrl = revokeUrl;
+    theaterEl.innerHTML = `
+      <div class="ig-vc-theater-bar">
+        <span class="ig-vc-theater-label"></span>
+        <span class="ig-vc-theater-actions">
+          <button type="button" class="ig-vc-theater-save"></button>
+          <button type="button" class="ig-vc-theater-fs">fullscreen</button>
+          <button type="button" class="ig-vc-theater-close">close</button>
+        </span>
+      </div>
+      <div class="ig-vc-theater-stage"></div>
+    `;
+    theaterEl.querySelector('.ig-vc-theater-label').textContent = label;
+    const stage = theaterEl.querySelector('.ig-vc-theater-stage');
+    const saveBtn = theaterEl.querySelector('.ig-vc-theater-save');
+    if (filename && src) {
+      saveBtn.textContent = 'save again';
+      saveBtn.addEventListener('click', () => downloadUrl(src, filename));
+    } else {
+      saveBtn.remove();
+    }
+    // Real fullscreen lives here rather than on the bar. A click inside the
+    // overlay is a fresh user gesture, which is what requestFullscreen needs —
+    // and what a recording several seconds long no longer has when it finishes.
+    theaterEl.querySelector('.ig-vc-theater-fs').addEventListener('click', () => {
+      if (document.fullscreenElement === theaterEl) document.exitFullscreen().catch(() => {});
+      else theaterEl.requestFullscreen().catch(() => {});
+    });
+    theaterEl.querySelector('.ig-vc-theater-close').addEventListener('click', closeTheater);
+    // Clicking the backdrop dismisses, but a click on the stage must not.
+    theaterEl.addEventListener('click', (e) => {
+      if (e.target === theaterEl) closeTheater();
+    });
+    document.body.appendChild(theaterEl);
+
+    if (adopt) {
+      // Relocating the player brings our own control bar with it, so the loop
+      // controls stay available in theater mode.
+      theaterAdopted = { element: adopt, parent: adopt.parentElement, nextSibling: adopt.nextSibling };
+      adopt.classList.add('ig-vc-theater-adopted');
+      stage.appendChild(adopt);
+    } else if (src) {
+      const held = document.createElement('video');
+      held.className = 'ig-vc-theater-video';
+      held.controls = true;
+      held.loop = true;
+      held.playsInline = true;
+      held.src = src;
+      stage.appendChild(held);
+      held.play().catch(() => {});
+    }
+
+    document.addEventListener('keydown', onTheaterKey, true);
+    document.addEventListener('fullscreenchange', onTheaterFullscreenChange);
+    onTheaterFullscreenChange();
+  }
 
   const SITE_ADAPTERS = {
     instagram: {
@@ -336,6 +475,7 @@
     const bar = document.createElement('div');
     bar.className = augmenting ? 'ig-vc-bar ig-vc-augment' : 'ig-vc-bar';
     bar.innerHTML = `
+      <button type="button" class="ig-vc-btn ig-vc-loop-restart"></button>
       <button type="button" class="ig-vc-btn ig-vc-play"></button>
       <span class="ig-vc-time">0:00 / 0:00</span>
       <div class="ig-vc-seek"><div class="ig-vc-track"><div class="ig-vc-buffer"></div><div class="ig-vc-loop-span"></div><div class="ig-vc-fill"></div></div><div class="ig-vc-playhead"></div><div class="ig-vc-handle ig-vc-handle-a"></div><div class="ig-vc-handle ig-vc-handle-b"></div><div class="ig-vc-hint"></div></div>
@@ -363,14 +503,13 @@
           <button type="button" class="ig-vc-opt ig-vc-loop-zoom">fit</button>
         </div></div>
       </div>
-      <button type="button" class="ig-vc-btn ig-vc-loop-restart"></button>
-      <button type="button" class="ig-vc-btn ig-vc-cache"></button>
+      <button type="button" class="ig-vc-btn ig-vc-clip"></button>
       <button type="button" class="ig-vc-btn ig-vc-fs"></button>
     `;
 
-    const [playBtn, timeEl, seekEl, muteBtn, volEl, speedBtn, loopInBtn, loopOutBtn, loopToggleBtn, loopRestartBtn, cacheBtn, fsBtn] = [
-      '.ig-vc-play', '.ig-vc-time', '.ig-vc-seek', '.ig-vc-mute', '.ig-vc-vol', '.ig-vc-speed-btn',
-      '.ig-vc-loop-in', '.ig-vc-loop-out', '.ig-vc-loop-toggle', '.ig-vc-loop-restart', '.ig-vc-cache', '.ig-vc-fs'
+    const [loopRestartBtn, playBtn, timeEl, seekEl, muteBtn, volEl, speedBtn, loopInBtn, loopOutBtn, loopToggleBtn, clipBtn, fsBtn] = [
+      '.ig-vc-loop-restart', '.ig-vc-play', '.ig-vc-time', '.ig-vc-seek', '.ig-vc-mute', '.ig-vc-vol', '.ig-vc-speed-btn',
+      '.ig-vc-loop-in', '.ig-vc-loop-out', '.ig-vc-loop-toggle', '.ig-vc-clip', '.ig-vc-fs'
     ].map((sel) => bar.querySelector(sel));
     const loopClearBtn = bar.querySelector('.ig-vc-loop-clear');
     const loopZoomBtn = bar.querySelector('.ig-vc-loop-zoom');
@@ -422,15 +561,6 @@
 
     const lastFrameIndex = () => core.lastFrameIndexFor(video.duration, frameClock.fps);
 
-    // Whole-file cache state. The video is fetched once into a blob and the element
-    // is repointed at it, so later seeks never touch the network.
-    let cacheState = 'idle'; // idle | loading | ready | unsupported | error
-    let cacheBlobUrl = null;
-    let cacheAbort = null;
-    let cacheProgress = 0;
-    let cachePercentShown = -1;
-    let originalSrc = null;
-    let restoreTime = null;
 
     // Held-key scrubbing state. Forward motion plays the video slowly; backward
     // motion steps on a timed schedule, because no browser implements reverse
@@ -479,6 +609,15 @@
     let zoomDisabled = false;
     let preLoopRate = null;
     let linkFeedbackTimer = null;
+
+    // Clip export state.
+    let clipState = 'idle'; // idle | recording | unsupported | error
+    let clipProgress = 0;
+    let clipPercentShown = -1;
+    let clipRecorder = null;
+    let clipStream = null;
+    let clipRafHandle = null;
+    let clipCancelled = false;
 
     const loopRange = () => core.normalizeLoop({
       start: loopIn,
@@ -555,16 +694,6 @@
       speedBtn.textContent = `${Number(rate.toFixed(2))}x`;
       for (const opt of speedOpts) opt.classList.toggle('active', Math.abs(Number(opt.dataset.speed) - rate) < 0.01);
 
-      if (cacheState === 'loading') {
-        cacheBtn.textContent = cacheProgress > 0 ? `${Math.round(cacheProgress * 100)}%` : '···';
-        cacheBtn.classList.add('ig-vc-cache-text');
-      } else {
-        cacheBtn.classList.remove('ig-vc-cache-text');
-        cacheBtn.innerHTML = cacheState === 'ready' ? ICONS.cached : ICONS.download;
-      }
-      cacheBtn.classList.toggle('active', cacheState === 'ready');
-      cacheBtn.classList.toggle('unavailable', cacheState === 'unsupported' || cacheState === 'error');
-      cacheBtn.title = CACHE_TITLES[cacheState] || CACHE_TITLES.idle;
 
       const range = loopRange();
       loopInBtn.classList.toggle('active', loopIn !== null);
@@ -609,7 +738,24 @@
           : 'Set both A and B to copy a loop link';
       }
 
+      // The clip button only means anything once a segment is marked, so it is
+      // hidden rather than shown disabled when there is nothing to export.
+      clipBtn.classList.toggle('ig-vc-hidden', !range);
+      if (clipState === 'recording') {
+        clipBtn.textContent = clipProgress > 0 ? `${Math.round(clipProgress * 100)}%` : 'rec';
+        clipBtn.classList.add('ig-vc-clip-text');
+      } else {
+        clipBtn.classList.remove('ig-vc-clip-text');
+        clipBtn.innerHTML = ICONS.download;
+      }
+      clipBtn.classList.toggle('active', clipState === 'recording');
+      clipBtn.classList.toggle('unavailable', clipState === 'unsupported' || clipState === 'error');
+      clipBtn.title = range ? (CLIP_TITLES[clipState] || CLIP_TITLES.idle) : CLIP_TITLES.unavailable;
+
       fsBtn.innerHTML = document.fullscreenElement?.contains(video) ? ICONS.minimize : ICONS.maximize;
+      fsBtn.title = document.fullscreenElement?.contains(video)
+        ? 'Leave fullscreen  ·  right-click or  t  for theater mode'
+        : 'Fullscreen  ·  right-click or  t  for theater mode, which covers the page but keeps the browser visible';
     }
 
     const renderTime = (t) => (frameMode
@@ -780,6 +926,8 @@
       clearTimeout(revealTimer);
       clearTimeout(linkFeedbackTimer);
       linkFeedbackTimer = null;
+      stopClipRecording();
+      clipState = 'idle';
       stopLoopWatcher();
       pendingDelta = 0;
       seekInFlight = false;
@@ -792,16 +940,6 @@
         cancelAnimationFrame(scrubRafHandle);
         scrubRafHandle = null;
       }
-      // Hand the element back to Instagram's own source, so a recycled <video> is
-      // never left pointing at a blob URL that is about to be revoked.
-      cacheAbort?.abort();
-      cacheAbort = null;
-      if (cacheBlobUrl && originalSrc && video.src === cacheBlobUrl) {
-        video.src = originalSrc;
-        video.load();
-      }
-      releaseCacheBlob();
-      cacheState = 'idle';
       bar.remove();
       clearSeriesOverlay();
       const container = currentContainer || (video.isConnected && resolvePlayerContainer(video));
@@ -1041,6 +1179,155 @@
       updateTime();
     };
 
+    // Records the marked loop and saves it. Real time by necessity: both sites
+    // stream through MediaSource, so there is no file to slice and the only
+    // source is the element's rendered output. Recorded at 1x regardless of the
+    // practice speed, so the clip is the move as filmed; any player can slow it.
+    const stopClipRecording = () => {
+      if (clipRafHandle !== null) {
+        cancelAnimationFrame(clipRafHandle);
+        clipRafHandle = null;
+      }
+      if (clipRecorder && clipRecorder.state !== 'inactive') {
+        try { clipRecorder.stop(); } catch (e) {}
+      }
+      if (clipStream) {
+        for (const track of clipStream.getTracks()) track.stop();
+        clipStream = null;
+      }
+    };
+
+    const recordClip = async () => {
+      if (clipState === 'recording') {
+        clipCancelled = true;
+        stopClipRecording();
+        return;
+      }
+      const range = loopRange();
+      if (!range) return;
+      if (typeof video.captureStream !== 'function' || typeof window.MediaRecorder !== 'function') {
+        clipState = 'unsupported';
+        sync();
+        return;
+      }
+      const mimeType = core.pickRecorderMime(CLIP_MIME_CANDIDATES, (m) => window.MediaRecorder.isTypeSupported(m));
+      if (!mimeType) {
+        clipState = 'unsupported';
+        sync();
+        return;
+      }
+
+      // The recording borrows playback, so remember what to give back.
+      const priorRate = video.playbackRate;
+      const priorMuted = video.muted;
+      const priorLooping = looping;
+      const priorPaused = video.paused;
+      looping = false;
+      stopLoopWatcher();
+
+      clipCancelled = false;
+      clipState = 'recording';
+      clipProgress = 0;
+      clipPercentShown = -1;
+      revealBar(true);
+      sync();
+
+      const chunks = [];
+      try {
+        clipStream = video.captureStream();
+        clipRecorder = new window.MediaRecorder(clipStream, { mimeType });
+      } catch (e) {
+        clipState = 'error';
+        clipStream = null;
+        clipRecorder = null;
+        sync();
+        return;
+      }
+      clipRecorder.ondataavailable = (e) => {
+        if (e.data && e.data.size) chunks.push(e.data);
+      };
+
+      const finished = new Promise((resolve) => { clipRecorder.onstop = resolve; });
+
+      // Park at A and let the decoder settle before the recorder opens, or the
+      // first frames are whatever was on screen beforehand.
+      video.playbackRate = 1;
+      // Unmuted so the clip carries the music, which is the point for a dance
+      // move. Keyboard navigation may well have muted it.
+      video.muted = false;
+      intendedFrame = null;
+      pendingDelta = 0;
+      video.currentTime = range.start;
+      await new Promise((r) => setTimeout(r, CLIP_LEAD_IN_MS));
+      await video.play().catch(() => {});
+
+      clipRecorder.start(200);
+      const endAt = Math.min(range.end, range.start + CLIP_MAX_SECONDS);
+      const tick = () => {
+        clipRafHandle = null;
+        if (clipState !== 'recording') return;
+        const span = endAt - range.start;
+        clipProgress = span > 0 ? Math.min(1, Math.max(0, (video.currentTime - range.start) / span)) : 0;
+        const percent = Math.round(clipProgress * 100);
+        if (percent !== clipPercentShown) {
+          clipPercentShown = percent;
+          sync();
+        }
+        if (video.currentTime >= endAt || video.ended) {
+          stopClipRecording();
+          return;
+        }
+        clipRafHandle = requestAnimationFrame(tick);
+      };
+      clipRafHandle = requestAnimationFrame(tick);
+
+      await finished;
+      video.pause();
+      video.playbackRate = priorRate;
+      video.muted = priorMuted;
+      if (priorLooping) {
+        looping = true;
+        startLoopWatcher();
+      }
+      if (!priorPaused && !priorLooping) video.play().catch(() => {});
+
+      clipRecorder = null;
+      clipState = 'idle';
+      clipProgress = 0;
+
+      if (clipCancelled || !chunks.length) {
+        sync();
+        return;
+      }
+
+      const blob = new Blob(chunks, { type: mimeType });
+      const filename = core.clipFilename(location.hostname, location.pathname, range.start, range.end);
+      const url = URL.createObjectURL(blob);
+      downloadUrl(url, filename);
+      // Then show it, so the move can be studied immediately. The overlay owns
+      // the blob URL from here and revokes it when dismissed.
+      openTheater({
+        src: url,
+        revokeUrl: url,
+        filename,
+        label: `${filename}  ·  ${formatTime(range.end - range.start, 2)}  ·  ${(blob.size / 1048576).toFixed(1)} MB`
+      });
+      sync();
+    };
+
+    // Theater mode: a page overlay showing only the video, leaving the browser's
+    // own chrome in place. Reached with `t` or by right-clicking fullscreen.
+    const openVideoTheater = () => {
+      // Adopt the player container so the video and our own bar move together,
+      // keeping the loop controls usable in theater mode. Pointing a second
+      // <video> at the page's blob URL would load nothing, since a MediaSource
+      // URL can only ever be attached to one element.
+      const container = currentContainer || resolvePlayerContainer(video);
+      if (!container) return false;
+      openTheater({ adopt: container, label: 'theater mode  ·  Esc or click outside to close' });
+      return true;
+    };
+
     const loopTick = () => {
       loopRafHandle = null;
       if (!looping) return;
@@ -1278,96 +1565,7 @@
       window.addEventListener(evt, onNativePointerEnd, { signal, capture: true });
     }
 
-    const releaseCacheBlob = () => {
-      if (cacheBlobUrl) {
-        URL.revokeObjectURL(cacheBlobUrl);
-        cacheBlobUrl = null;
-      }
-      cacheProgress = 0;
-      cachePercentShown = -1;
-    };
 
-    // Hands the element back to Instagram's own source before dropping the blob,
-    // since revoking a URL the video is still playing from would break playback.
-    const disableCache = () => {
-      cacheAbort?.abort();
-      cacheAbort = null;
-      if (cacheBlobUrl && originalSrc && video.src === cacheBlobUrl) {
-        restoreTime = video.currentTime;
-        const wasPlaying = !video.paused;
-        video.src = originalSrc;
-        video.load();
-        if (wasPlaying) video.play().catch(() => {});
-      }
-      releaseCacheBlob();
-      cacheState = 'idle';
-      sync();
-    };
-
-    const enableCache = async () => {
-      const source = video.currentSrc || video.src;
-      // A blob:/MediaSource src means Instagram's player is feeding segments in
-      // from its own JavaScript. There is no fetchable file behind it, and
-      // overwriting the src would break their player, so this is left alone.
-      if (core.cacheRejectReason({ source, bytes: 0, maxBytes: CACHE_MAX_BYTES }) === 'unsupported') {
-        cacheState = 'unsupported';
-        sync();
-        return;
-      }
-      originalSrc = source;
-      cacheState = 'loading';
-      cacheProgress = 0;
-      cachePercentShown = -1;
-      sync();
-      cacheAbort = new AbortController();
-      try {
-        // The same file the element already loaded, so this usually comes straight
-        // from the browser's HTTP cache. Cookies are deliberately not attached.
-        const res = await fetch(source, { credentials: 'omit', signal: cacheAbort.signal });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const total = Number(res.headers.get('content-length')) || 0;
-        if (core.cacheRejectReason({ source, bytes: total, maxBytes: CACHE_MAX_BYTES })) {
-          throw new Error('exceeds cache size limit');
-        }
-        const reader = res.body.getReader();
-        const chunks = [];
-        let received = 0;
-        for (;;) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          chunks.push(value);
-          received += value.length;
-          if (core.cacheRejectReason({ source, bytes: received, maxBytes: CACHE_MAX_BYTES })) {
-            reader.cancel();
-            throw new Error('exceeds cache size limit');
-          }
-          cacheProgress = total ? received / total : 0;
-          // Chunks land far faster than the eye can read, so only repaint when the
-          // whole percentage actually moves.
-          const percent = Math.round(cacheProgress * 100);
-          if (percent !== cachePercentShown) {
-            cachePercentShown = percent;
-            sync();
-          }
-        }
-        const blob = new Blob(chunks, { type: res.headers.get('content-type') || 'video/mp4' });
-        cacheAbort = null;
-        cacheBlobUrl = URL.createObjectURL(blob);
-        restoreTime = video.currentTime;
-        const wasPlaying = !video.paused;
-        video.src = cacheBlobUrl;
-        video.load();
-        cacheState = 'ready';
-        if (wasPlaying) video.play().catch(() => {});
-        sync();
-      } catch (err) {
-        cacheAbort = null;
-        releaseCacheBlob();
-        // Cancelling is a normal outcome, not a failure.
-        cacheState = err?.name === 'AbortError' ? 'idle' : 'error';
-        sync();
-      }
-    };
 
     playBtn.addEventListener('click', () => (video.paused ? requestPlay() : requestPause()));
     muteBtn.addEventListener('click', () => {
@@ -1392,6 +1590,24 @@
         sync();
       });
     }
+    clipBtn.addEventListener('click', recordClip);
+    // Theater mode on the fullscreen button's right-click: a page overlay that
+    // shows only the video while leaving the browser's tabs and address bar in
+    // place, unlike real fullscreen on the left-click.
+    // Theater mode is the default for this button: it covers the page but leaves
+    // the browser's tabs and address bar visible. Real fullscreen lives inside
+    // the overlay, where a click is a fresh gesture requestFullscreen accepts.
+    fsBtn.addEventListener('click', () => {
+      if (document.fullscreenElement) {
+        document.exitFullscreen().catch(() => {});
+        return;
+      }
+      openVideoTheater();
+    });
+    fsBtn.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      openVideoTheater();
+    });
     loopLinkBtn.addEventListener('click', async () => {
       const range = loopRange();
       if (!range) {
@@ -1440,21 +1656,6 @@
       updateTime();
     });
     loopRestartBtn.addEventListener('click', restartLoop);
-    cacheBtn.addEventListener('click', () => {
-      if (cacheState === 'loading') {
-        cacheAbort?.abort();
-        return;
-      }
-      if (cacheState === 'ready') {
-        disableCache();
-        return;
-      }
-      enableCache();
-    });
-    fsBtn.addEventListener('click', () => {
-      if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
-      else (currentContainer || ensureRelativeContainer(resolvePlayerContainer(video)) || video).requestFullscreen().catch(() => {});
-    });
 
     for (const evt of ['play', 'playing', 'pause', 'volumechange', 'ratechange']) {
       video.addEventListener(evt, sync, { signal });
@@ -1481,17 +1682,6 @@
       looping = false;
       stopLoopWatcher();
       keyboardMuted = false;
-      // Instagram recycles <video> elements, so if our blob is no longer the source
-      // the element has been reclaimed and the cache belongs to a different video.
-      if (cacheBlobUrl && video.currentSrc !== cacheBlobUrl) {
-        releaseCacheBlob();
-        cacheState = 'idle';
-      }
-      if (restoreTime !== null) {
-        const resumeAt = restoreTime;
-        restoreTime = null;
-        if (Number.isFinite(resumeAt) && resumeAt > 0) video.currentTime = resumeAt;
-      }
       mount();
       sync();
       updateTime();
@@ -1518,6 +1708,7 @@
     controllers.set(video, {
       mount, sync, destroy, stepFrames, togglePlay, beginScrub, endScrub,
       setLoopIn, setLoopOut, toggleLoop, restartLoop, clearLoop,
+      openTheater: openVideoTheater,
       container: () => currentContainer
     });
   }
@@ -1623,12 +1814,20 @@
     const loopToggle = KEYS_LOOP_TOGGLE.has(e.key);
     const loopRestart = KEYS_LOOP_RESTART.has(e.key);
     const loopClear = KEYS_LOOP_CLEAR.has(e.key);
+    const theater = KEYS_THEATER.has(e.key);
     const isLoopKey = loopIn || loopOut || loopToggle || loopRestart || loopClear;
-    if (!space && !back && !forward && !isLoopKey) return;
+    if (!space && !back && !forward && !isLoopKey && !theater) return;
     if (isTypingContext(e.target) || isTypingContext(document.activeElement)) return;
     const video = resolveActiveVideo();
     const ctrl = controllers.get(video);
     if (!ctrl) return;
+
+    if (theater) {
+      if (!e.repeat) ctrl.openTheater();
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
 
     if (space) {
       stopHold();

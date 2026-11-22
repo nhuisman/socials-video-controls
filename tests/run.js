@@ -19,7 +19,6 @@ const FPS_CANDIDATES = [23.976, 24, 25, 29.97, 30, 48, 50, 59.94, 60, 120];
 const FPS_SNAP_TOLERANCE = 0.02;
 const SCRUB_MAX_CATCHUP_FRAMES = 3;
 const SEEK_STALL_MS = 1000;
-const CACHE_MAX_BYTES = 256 * 1024 * 1024;
 const STANDARD_RATES = [23.976, 24, 25, 29.97, 30, 59.94, 60];
 
 //#region Harness
@@ -561,33 +560,6 @@ group('buffered range', () => {
   });
 });
 
-group('cache eligibility', () => {
-  test('refuses a MediaSource-backed player', () => {
-    equal(core.cacheRejectReason({ source: 'blob:https://instagram.com/abc', bytes: 0, maxBytes: CACHE_MAX_BYTES }), 'unsupported');
-    equal(core.cacheRejectReason({ source: 'mediasource:abc', bytes: 0, maxBytes: CACHE_MAX_BYTES }), 'unsupported');
-    note('a blob: source has no fetchable file, and overwriting it would break Instagram');
-  });
-
-  test('refuses a missing source', () => {
-    equal(core.cacheRejectReason({ source: '', bytes: 0, maxBytes: CACHE_MAX_BYTES }), 'unsupported');
-    equal(core.cacheRejectReason({ source: null, bytes: 0, maxBytes: CACHE_MAX_BYTES }), 'unsupported');
-  });
-
-  test('accepts a progressive source within the size limit', () => {
-    equal(core.cacheRejectReason({ source: 'https://cdn.example/v.mp4', bytes: 80 * 1024 * 1024, maxBytes: CACHE_MAX_BYTES }), null);
-  });
-
-  test('refuses an oversize download at the declared and the observed size', () => {
-    equal(core.cacheRejectReason({ source: 'https://cdn.example/v.mp4', bytes: CACHE_MAX_BYTES + 1, maxBytes: CACHE_MAX_BYTES }), 'too-large');
-    note('checked against Content-Length up front and against bytes received while streaming');
-  });
-
-  test('accepts a source whose size is not declared', () => {
-    equal(core.cacheRejectReason({ source: 'https://cdn.example/v.mp4', bytes: 0, maxBytes: CACHE_MAX_BYTES }), null);
-    equal(core.cacheRejectReason({ source: 'https://cdn.example/v.mp4', bytes: NaN, maxBytes: CACHE_MAX_BYTES }), null);
-  });
-});
-
 group('site resolution', () => {
   test('resolves the supported hosts and their subdomains', () => {
     equal(core.resolveSiteKey('instagram.com'), 'instagram');
@@ -976,6 +948,53 @@ group('loop links', () => {
   });
 });
 
+group('clip export', () => {
+  test('picks the first container the browser supports', () => {
+    const candidates = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
+    equal(core.pickRecorderMime(candidates, () => true), 'video/webm;codecs=vp9,opus', 'prefers the first');
+    equal(core.pickRecorderMime(candidates, (m) => m === 'video/webm'), 'video/webm', 'falls through');
+    equal(core.pickRecorderMime(candidates, () => false), null, 'nothing supported');
+  });
+
+  test('skips a candidate whose support check throws', () => {
+    const candidates = ['bad', 'video/webm'];
+    equal(core.pickRecorderMime(candidates, (m) => {
+      if (m === 'bad') throw new TypeError('malformed');
+      return true;
+    }), 'video/webm');
+    note('a malformed candidate is skipped rather than aborting the choice');
+  });
+
+  test('refuses malformed arguments', () => {
+    equal(core.pickRecorderMime(null, () => true), null);
+    equal(core.pickRecorderMime(['video/webm'], null), null);
+    equal(core.pickRecorderMime([], () => true), null);
+  });
+
+  test('names a clip after its site, video and bounds', () => {
+    equal(core.clipFilename('www.instagram.com', '/p/Dfo3mUzgJQJ/', 30.01, 34.51),
+      'instagram-Dfo3mUzgJQJ-30p01-34p51.webm');
+    equal(core.clipFilename('www.facebook.com', '/reel/1046756455114845', 5, 9.5),
+      'facebook-1046756455114845-5p00-9p50.webm');
+    note('the decimal point becomes p, since a filename should not carry a second dot');
+  });
+
+  test('copes with a path that names no video', () => {
+    equal(core.clipFilename('www.instagram.com', '/', 1, 2), 'instagram-1p00-2p00.webm');
+    equal(core.clipFilename('www.facebook.com', '', 1, 2), 'facebook-1p00-2p00.webm');
+  });
+
+  test('falls back for an unsupported host or bad bounds', () => {
+    equal(core.clipFilename('example.com', '/p/abc/', 1, 2), 'video-abc-1p00-2p00.webm');
+    equal(core.clipFilename('www.instagram.com', '/p/abc/', NaN, 2), 'instagram-abc-0p00-2p00.webm');
+    equal(core.clipFilename(null, null, 1, 2), 'video-1p00-2p00.webm');
+  });
+
+  test('honours a different extension', () => {
+    equal(core.clipFilename('www.instagram.com', '/p/abc/', 1, 2, 'mp4'), 'instagram-abc-1p00-2p00.mp4');
+  });
+});
+
 //#region Summary
 
 console.log('');
@@ -990,13 +1009,15 @@ console.log(`PASSED: ${passed} tests, ${notes.length} notes`);
 //
 // Covered here: time formatting, frame-rate snapping, frame-index and
 // frame-centre math, frame-step coalescing, drag-seek coalescing and release,
-// the stall watchdog, scrub pacing, buffered-range lookup, cache eligibility.
+// the stall watchdog, scrub pacing, buffered-range lookup, loop links, loop
+// range and marker clamping, timeline zoom, recorder container choice and clip
+// filenames.
 //
 // NOT covered, because it cannot be separated from a real <video> element or a
 // real DOM without a headless browser or jsdom:
 //
-//   - Blob lifetime ordering in the cache: the src must move off a blob URL
-//     before that URL is revoked, or playback breaks. Verify by hand.
+//   - Clip recording: captureStream into MediaRecorder, and the theater
+//     overlay that shows the result. Verified in-browser instead.
 //   - Forward jog scrub, which sets playbackRate and plays rather than seeking.
 //   - Restoring rate and mute after a scrub, and sync() not fighting them.
 //   - Which player the keyboard acts on (fullscreen / hover / recent keypress).
