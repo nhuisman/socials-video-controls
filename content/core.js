@@ -116,6 +116,20 @@
     return null;
   };
 
+  // Clamps a dragged loop marker so it stays inside the media and cannot cross
+  // the other marker: an in point stops minFrames short of the out point, and
+  // vice versa. Returns null when the video is not ready.
+  core.clampMarker = ({ value, other, which, duration, fps, minFrames = 3 }) => {
+    if (!Number.isFinite(value) || !Number.isFinite(duration) || duration <= 0) return null;
+    if (!Number.isFinite(fps) || fps <= 0) return null;
+    const minSpan = minFrames / fps;
+    let next = value;
+    if (Number.isFinite(other)) {
+      next = which === 'in' ? Math.min(next, other - minSpan) : Math.max(next, other + minSpan);
+    }
+    return Math.max(0, Math.min(next, duration));
+  };
+
   // Normalises a loop range. Markers can be set in either order, so these are
   // sorted rather than rejected, and clamped to the media. A range shorter than
   // minFrames is returned as null: looping over one or two frames thrashes the

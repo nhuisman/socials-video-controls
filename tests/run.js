@@ -693,6 +693,34 @@ group('A-B loop', () => {
     assert(!core.loopShouldRestart({ currentTime: NaN, loopEnd: 10, paused: false }), 'unknown position');
     assert(!core.loopShouldRestart({ currentTime: 10, loopEnd: NaN, paused: false }), 'no out point');
   });
+  test('a dragged in point cannot cross the out point', () => {
+    const r = core.clampMarker({ value: 9, other: 5, which: 'in', duration: 20, fps: 30, minFrames: 3 });
+    close(r, 5 - 3 / 30, 1e-9, 'in point should stop short of the out point');
+    note('handles stop three frames apart rather than passing through each other');
+  });
+
+  test('a dragged out point cannot cross the in point', () => {
+    const r = core.clampMarker({ value: 2, other: 5, which: 'out', duration: 20, fps: 30, minFrames: 3 });
+    close(r, 5 + 3 / 30, 1e-9, 'out point should stay past the in point');
+  });
+
+  test('leaves a marker alone when it is not crossing', () => {
+    equal(core.clampMarker({ value: 3, other: 9, which: 'in', duration: 20, fps: 30 }), 3);
+    equal(core.clampMarker({ value: 12, other: 9, which: 'out', duration: 20, fps: 30 }), 12);
+  });
+
+  test('clamps a dragged marker to the media', () => {
+    equal(core.clampMarker({ value: -4, other: null, which: 'in', duration: 20, fps: 30 }), 0);
+    equal(core.clampMarker({ value: 99, other: null, which: 'out', duration: 20, fps: 30 }), 20);
+    equal(core.clampMarker({ value: 10, other: NaN, which: 'in', duration: 20, fps: 30 }), 10, 'an unset partner imposes no limit');
+  });
+
+  test('refuses to place a marker on an unready video', () => {
+    equal(core.clampMarker({ value: 5, other: null, which: 'in', duration: NaN, fps: 30 }), null);
+    equal(core.clampMarker({ value: 5, other: null, which: 'in', duration: 0, fps: 30 }), null);
+    equal(core.clampMarker({ value: 5, other: null, which: 'in', duration: 20, fps: 0 }), null);
+    equal(core.clampMarker({ value: NaN, other: null, which: 'in', duration: 20, fps: 30 }), null);
+  });
 });
 
 //#region Summary

@@ -100,12 +100,55 @@
   transform: translateY(-100%);
 }
 
-.ig-vc-bar.ig-vc-augment > :not(.ig-vc-time, .ig-vc-loop) {
+.ig-vc-bar.ig-vc-augment > :not(.ig-vc-time, .ig-vc-loop, .ig-vc-seek) {
   display: none !important;
+}
+
+/* A compact trim timeline, not a replacement for Facebook's progress bar: it
+   exists to carry the loop handles, which their player has no equivalent for. */
+.ig-vc-bar.ig-vc-augment .ig-vc-seek {
+  flex: 0 0 150px;
+  width: 150px;
 }
 
 .ig-vc-player:is(:hover:not(:fullscreen.idle), .dragging, .ig-vc-kb) .ig-vc-bar.ig-vc-augment {
   transform: translateY(0);
+}
+
+/* Trim handles. Children of .ig-vc-seek rather than .ig-vc-track, because the
+   track clips its overflow and would cut them off. */
+.ig-vc-handle {
+  display: none;
+  position: absolute;
+  top: 50%;
+  width: 9px;
+  height: 14px;
+  margin-left: -4.5px;
+  transform: translateY(-50%);
+  box-sizing: border-box;
+  border-radius: 2px;
+  background: rgb(120, 200, 255);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
+  cursor: ew-resize;
+  touch-action: none;
+  z-index: 2;
+  transition: height 0.12s ease;
+}
+
+.ig-vc-seek.has-a .ig-vc-handle-a {
+  display: block;
+  left: var(--la, 0%);
+}
+
+.ig-vc-seek.has-b .ig-vc-handle-b {
+  display: block;
+  left: var(--lb, 0%);
+}
+
+.ig-vc-handle:hover,
+.ig-vc-handle:active {
+  height: 18px;
+  background: #fff;
 }
 
 /* A-B loop span, drawn above the buffered range and below the playback fill */
@@ -204,6 +247,7 @@
   flex: 1;
   min-width: 48px;
   height: 18px;
+  position: relative;
   display: flex;
   align-items: center;
   cursor: pointer;

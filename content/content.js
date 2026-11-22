@@ -318,7 +318,7 @@
     bar.innerHTML = `
       <button type="button" class="ig-vc-btn ig-vc-play"></button>
       <span class="ig-vc-time">0:00 / 0:00</span>
-      <div class="ig-vc-seek"><div class="ig-vc-track"><div class="ig-vc-buffer"></div><div class="ig-vc-loop-span"></div><div class="ig-vc-fill"></div></div></div>
+      <div class="ig-vc-seek"><div class="ig-vc-track"><div class="ig-vc-buffer"></div><div class="ig-vc-loop-span"></div><div class="ig-vc-fill"></div></div><div class="ig-vc-handle ig-vc-handle-a"></div><div class="ig-vc-handle ig-vc-handle-b"></div></div>
       <div class="ig-vc-wrap">
         <button type="button" class="ig-vc-btn ig-vc-mute"></button>
         <div class="ig-vc-popup"><div class="ig-vc-box">
@@ -345,6 +345,9 @@
       '.ig-vc-play', '.ig-vc-time', '.ig-vc-seek', '.ig-vc-mute', '.ig-vc-vol', '.ig-vc-speed-btn',
       '.ig-vc-loop-in', '.ig-vc-loop-out', '.ig-vc-loop-toggle', '.ig-vc-loop-restart', '.ig-vc-cache', '.ig-vc-fs'
     ].map((sel) => bar.querySelector(sel));
+    const handleA = bar.querySelector('.ig-vc-handle-a');
+    const handleB = bar.querySelector('.ig-vc-handle-b');
+    const seekTrack = seekEl.querySelector('.ig-vc-track');
     const speedOpts = bar.querySelectorAll('.ig-vc-opt');
 
     for (const evt of ['click', 'dblclick', 'contextmenu', 'pointerdown', 'pointerup', 'mousedown', 'mouseup', 'dragstart']) {
@@ -545,16 +548,21 @@
       }
     };
 
+    // Marker positions and visibility, split out so a trim drag can repaint them
+    // at pointer rate without the cost of a full sync() on every move.
+    const paintLoopMarks = () => {
+      if (!Number.isFinite(video.duration) || video.duration <= 0) return;
+      seekEl.style.setProperty('--la', `${(((loopIn ?? 0) / video.duration) * 100).toFixed(2)}%`);
+      seekEl.style.setProperty('--lb', `${(((loopOut ?? 0) / video.duration) * 100).toFixed(2)}%`);
+      seekEl.classList.toggle('has-a', loopIn !== null);
+      seekEl.classList.toggle('has-b', loopOut !== null);
+      seekEl.classList.toggle('has-loop', Boolean(loopRange()));
+    };
+
     const updateTime = () => {
       if (!Number.isFinite(video.duration) || video.duration <= 0) return;
       seekEl.style.setProperty('--b', `${((bufferedEndNear(video.currentTime) / video.duration) * 100).toFixed(1)}%`);
-      // Paint the loop span on the seek bar so the marked segment is visible.
-      const range = loopRange();
-      const markA = range ? range.start : loopIn;
-      const markB = range ? range.end : loopOut;
-      seekEl.style.setProperty('--la', `${(((markA ?? 0) / video.duration) * 100).toFixed(1)}%`);
-      seekEl.style.setProperty('--lb', `${(((markB ?? 0) / video.duration) * 100).toFixed(1)}%`);
-      seekEl.classList.toggle('has-loop', Boolean(range));
+      paintLoopMarks();
       // Mid-drag the pointer owns the fill and the readout, so leave both alone;
       // overwriting them here would snap the bar back to the lagging decoder.
       if (dragTargetTime !== null) return;
@@ -773,6 +781,79 @@
 
     // Restarting is paced like any other seek, so a tight loop cannot thrash the
     // decoder by issuing a new seek before the last one landed.
+    // Trim handles. Dragging one moves that marker and previews the video at the
+    // new position, which is how a clip trimmer behaves: you see the frame you
+    // are trimming to. Previews go through the same paced seek path as any other
+    // drag, so a fast drag cannot thrash the decoder.
+    let trimDrag = null;
+
+    const moveTrim = (clientX) => {
+      if (!trimDrag || !Number.isFinite(video.duration) || video.duration <= 0) return;
+      const rect = seekTrack.getBoundingClientRect();
+      if (rect.width <= 0) return;
+      const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+      // Snapped to a frame centre so a marker always sits on the arrow keys' grid.
+      const snapped = core.frameCenter(
+        core.frameIndexAt(ratio * video.duration, frameClock.fps),
+        frameClock.fps
+      );
+      const clamped = core.clampMarker({
+        value: snapped,
+        other: trimDrag === 'in' ? loopOut : loopIn,
+        which: trimDrag,
+        duration: video.duration,
+        fps: frameClock.fps,
+        minFrames: LOOP_MIN_FRAMES
+      });
+      if (clamped === null) return;
+      if (trimDrag === 'in') loopIn = clamped;
+      else loopOut = clamped;
+      dragTargetTime = clamped;
+      dragDirty = true;
+      timeEl.textContent = renderTime(clamped);
+      paintLoopMarks();
+      flushDragSeek();
+    };
+
+    const bindTrimHandle = (handle, which) => {
+      handle.addEventListener('pointerdown', (e) => {
+        if (e.button !== 0) return;
+        // Stop the press reaching the seek bar underneath, which would otherwise
+        // start a playhead scrub at the same time.
+        e.stopPropagation();
+        e.preventDefault();
+        handle.setPointerCapture(e.pointerId);
+        trimDrag = which;
+        wasPlaying = !video.paused;
+        if (wasPlaying) requestPause();
+        pendingDelta = 0;
+        intendedFrame = null;
+        revealBar(true);
+        moveTrim(e.clientX);
+      });
+      handle.addEventListener('pointermove', (e) => {
+        if (trimDrag !== which || !handle.hasPointerCapture(e.pointerId)) return;
+        moveTrim(e.clientX);
+      });
+      for (const evt of ['pointerup', 'pointercancel']) {
+        handle.addEventListener(evt, (e) => {
+          if (trimDrag !== which || !handle.hasPointerCapture(e.pointerId)) return;
+          handle.releasePointerCapture(e.pointerId);
+          trimDrag = null;
+          dragTargetTime = null;
+          dragDirty = false;
+          // Trimming while looping should resume inside the new range, not from
+          // wherever the handle was dropped.
+          if (wasPlaying) requestPlay();
+          sync();
+          updateTime();
+        });
+      }
+    };
+
+    bindTrimHandle(handleA, 'in');
+    bindTrimHandle(handleB, 'out');
+
     const loopTick = () => {
       loopRafHandle = null;
       if (!looping) return;

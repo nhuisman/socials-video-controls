@@ -180,11 +180,21 @@ The workflow this was built for: watch a dance video, find a move, bracket it, a
 
 The same four controls are on the bar: `A`, `B`, a loop toggle, and a jump-back-to-A button. Right-clicking the loop toggle clears the markers. They are available on Facebook too, where the rest of the bar is hidden, because looping is the point of the tool on a dance video.
 
-The marked segment is painted on the seek bar, so you can see the span you are working on.
+### Trim handles
+
+The marked segment is painted on the seek bar with a draggable handle at each end, the way a clip trimmer works. Grab either handle and slide it to move that marker — the video previews the frame you are trimming to as you drag, so you can see exactly where the segment starts or ends.
+
+- Handles appear as soon as their marker is set, so you can place A, drag it to taste, then place B.
+- A handle cannot pass its partner: dragging the in point towards the out point stops three frames short, and vice versa.
+- Each position snaps to a frame centre, the same grid the arrow keys step along, so dragging and frame-stepping agree.
+- A press on a handle does not start a playhead scrub, even though the handle sits on the seek bar.
+- Previews are paced through the same single-seek-in-flight path as every other drag, so a fast drag cannot thrash the decoder.
+
+On Facebook the extension shows a compact 150px trim timeline for this purpose. It is not a replacement for Facebook's progress bar, which stays exactly where it was — it exists to carry the handles, which their player has no equivalent for.
 
 ### Notes on the design
 
-- **Markers are deliberately soft.** Set them roughly while the video plays, then refine by frame-stepping and re-pressing. There is no separate edit mode, and no need to be precise the first time. Each marker snaps to the centre of the current frame, so it sits on the same grid the arrow keys step along.
+- **Markers are deliberately soft.** Set them roughly while the video plays, then refine either by frame-stepping and re-pressing, or by dragging the handle on the seek bar. There is no separate edit mode, and no need to be precise the first time. Each marker snaps to the centre of the current frame, so it sits on the same grid the arrow keys step along.
 - **Order does not matter.** Mark the end before the start if that is how you spotted it; the range sorts itself.
 - **Very short loops are refused.** A range under three frames thrashes the decoder and shows nothing useful, so the loop toggle stays disabled until the span is worth playing.
 - **Restarts are paced** through the same single-seek-in-flight path as everything else, so a tight loop cannot issue a new seek before the last one landed.
