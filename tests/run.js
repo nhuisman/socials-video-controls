@@ -724,77 +724,144 @@ group('A-B loop', () => {
 });
 
 group('timeline zoom', () => {
+  // A 150px bar, the width augment mode uses, and a 105s video.
+  const BAR = 150;
+  const DUR = 105;
+  const view = (over) => core.nextTimelineView({
+    current: null, loopIn: 30, loopOut: 31.5, duration: DUR, barWidthPx: BAR,
+    minGapPx: 190, unzoomGapPx: 420, minWindowSeconds: 5, ...over
+  });
+
   test('shows the whole video when no loop is marked', () => {
-    const v = core.resolveTimelineView({ loopIn: null, loopOut: null, duration: 100, fps: 30 });
+    const v = view({ loopIn: null, loopOut: null });
     equal(v.start, 0);
-    equal(v.end, 100);
+    equal(v.end, DUR);
     equal(v.zoomed, false);
   });
 
-  test('shows the whole video when the loop is already a large share of it', () => {
-    const v = core.resolveTimelineView({ loopIn: 10, loopOut: 60, duration: 100, fps: 30 });
-    equal(v.zoomed, false, 'a 50% loop needs no zoom');
-    equal(v.end, 100);
+  test('decides in pixels, not as a fraction of the video', () => {
+    // The same 5s loop: too tight to aim at on a narrow bar, fine on a wide one.
+    const narrow = view({ loopIn: 10, loopOut: 15, barWidthPx: 150 });
+    const wide = view({ loopIn: 10, loopOut: 15, barWidthPx: 4000 });
+    assert(narrow.zoomed, '5s of 105s on a 150px bar is ~7px apart, so zoom');
+    equal(wide.zoomed, false, 'the same loop on a 4000px bar is already ~190px apart');
+    note('the trigger is how far apart the handles land on screen, not the loop duration');
   });
 
-  test('zooms around a tight loop so the markers separate', () => {
-    // The case that prompted this: 1.5s marked in a 105s video.
-    const v = core.resolveTimelineView({ loopIn: 30, loopOut: 31.5, duration: 105, fps: 30 });
-    assert(v.zoomed, 'should zoom');
-    const beforeWidth = (31.5 - 30) / 105;
-    const afterWidth = (31.5 - 30) / (v.end - v.start);
-    assert(afterWidth > beforeWidth * 10, `loop went from ${(beforeWidth * 100).toFixed(1)}% to ${(afterWidth * 100).toFixed(1)}% of the bar`);
-    note(`a 1.5s loop in a 105s video goes from ${(beforeWidth * 100).toFixed(1)}% to ${(afterWidth * 100).toFixed(0)}% of the bar width`);
+  test('does not zoom when the handles are already far enough apart', () => {
+    const v = view({ loopIn: 10, loopOut: 100, barWidthPx: BAR });
+    equal(v.zoomed, false, 'a 90s loop fills most of the bar');
   });
 
-  test('leaves room either side to drag a marker outwards', () => {
-    const v = core.resolveTimelineView({ loopIn: 30, loopOut: 32, duration: 105, fps: 30 });
-    assert(v.start < 30, 'window starts before A');
-    assert(v.end > 32, 'window ends after B');
+  test('caps how far it will zoom in', () => {
+    for (const [a, b] of [[30, 31.5], [30, 30.5], [30, 30.2], [30, 30.1]]) {
+      const v = view({ loopIn: a, loopOut: b });
+      assert(v.end - v.start >= 5 - 1e-9, `a ${(b - a)}s loop zoomed to a ${(v.end - v.start).toFixed(2)}s window, past the 5s cap`);
+    }
+    note('a very short loop stops at the 5s window rather than zooming without limit');
   });
 
-  test('slides rather than shrinks the window at the start of the video', () => {
-    const v = core.resolveTimelineView({ loopIn: 0, loopOut: 1.5, duration: 105, fps: 30 });
-    equal(v.start, 0, 'cannot start before zero');
-    assert(v.end > 1.5, 'window still extends past B');
-    close(v.end - v.start, 3, 1e-6, 'window keeps its width');
+  test('keeps the window while a marker is nudged inside it', () => {
+    const first = view({});
+    assert(first.zoomed, 'should zoom initially');
+    // Slide B a little; the window must not move.
+    const after = core.nextTimelineView({
+      current: first, loopIn: 30, loopOut: 31.9, duration: DUR, barWidthPx: BAR,
+      minGapPx: 190, unzoomGapPx: 420, minWindowSeconds: 5
+    });
+    equal(after.start, first.start, 'window start moved');
+    equal(after.end, first.end, 'window end moved');
+    note('nudging a marker no longer rescales the bar underneath the pointer');
   });
 
-  test('slides rather than shrinks the window at the end of the video', () => {
-    const v = core.resolveTimelineView({ loopIn: 103.5, loopOut: 105, duration: 105, fps: 30 });
-    equal(v.end, 105, 'cannot end past the duration');
-    assert(v.start < 103.5, 'window still extends before A');
-    close(v.end - v.start, 3, 1e-6, 'window keeps its width');
+  test('keeps the window when markers are re-set inside it', () => {
+    const first = view({});
+    const after = core.nextTimelineView({
+      current: first, loopIn: 30.4, loopOut: 31.1, duration: DUR, barWidthPx: BAR,
+      minGapPx: 190, unzoomGapPx: 420, minWindowSeconds: 5
+    });
+    equal(after.start, first.start);
+    equal(after.end, first.end);
+  });
+
+  test('re-centres only when a marker leaves the window', () => {
+    const first = view({});
+    const after = core.nextTimelineView({
+      current: first, loopIn: 70, loopOut: 71.5, duration: DUR, barWidthPx: BAR,
+      minGapPx: 190, unzoomGapPx: 420, minWindowSeconds: 5
+    });
+    assert(after.start !== first.start, 'should follow markers that moved out of view');
+    assert(70 >= after.start && 71.5 <= after.end, 'new window must contain the markers');
+  });
+
+  test('returns to the whole video only once the loop is much wider', () => {
+    const zoomed = view({});
+    // Still narrow at this scale: stay zoomed rather than flapping.
+    const held = core.nextTimelineView({
+      current: zoomed, loopIn: 30, loopOut: 32, duration: DUR, barWidthPx: BAR,
+      minGapPx: 190, unzoomGapPx: 420, minWindowSeconds: 5
+    });
+    assert(held.zoomed, 'should not unzoom at the zoom-in threshold');
+    // Grown well past the bar width inside the window: the zoom is pointless.
+    const released = core.nextTimelineView({
+      current: zoomed, loopIn: 0, loopOut: 60, duration: DUR, barWidthPx: BAR,
+      minGapPx: 190, unzoomGapPx: 420, minWindowSeconds: 5
+    });
+    equal(released.zoomed, false, 'should unzoom once the loop is large');
+    note('separate zoom-in and zoom-out thresholds stop the bar flipping back and forth');
+  });
+
+  test('slides rather than shrinks the window at either end', () => {
+    const atStart = view({ loopIn: 0, loopOut: 1.5 });
+    equal(atStart.start, 0, 'cannot start before zero');
+    close(atStart.end - atStart.start, 5, 1e-6, 'keeps its width');
+    const atEnd = view({ loopIn: DUR - 1.5, loopOut: DUR });
+    equal(atEnd.end, DUR, 'cannot end past the duration');
+    close(atEnd.end - atEnd.start, 5, 1e-6, 'keeps its width');
+  });
+
+  test('never produces a window wider than the video', () => {
+    const v = core.nextTimelineView({
+      current: null, loopIn: 0.1, loopOut: 0.3, duration: 2, barWidthPx: BAR,
+      minGapPx: 190, unzoomGapPx: 420, minWindowSeconds: 5
+    });
+    assert(v.end - v.start <= 2 + 1e-9, 'window exceeded a 2s video');
   });
 
   test('can be switched off', () => {
-    const v = core.resolveTimelineView({ loopIn: 30, loopOut: 31.5, duration: 105, fps: 30, disabled: true });
+    const v = view({ disabled: true });
     equal(v.zoomed, false);
-    equal(v.end, 105);
+    equal(v.end, DUR);
+  });
+
+  test('holds the current window when the bar has no measurable width', () => {
+    const zoomed = view({});
+    const unlaidOut = core.nextTimelineView({
+      current: zoomed, loopIn: 30, loopOut: 31.5, duration: DUR, barWidthPx: 0,
+      minGapPx: 190, unzoomGapPx: 420, minWindowSeconds: 5
+    });
+    equal(unlaidOut, zoomed, 'a zero-width measurement must not reset the view');
   });
 
   test('maps time to position and back within the window', () => {
-    const view = { start: 29, end: 33, zoomed: true };
-    close(core.timeToViewRatio(31, view), 0.5, 1e-9, 'midpoint');
-    close(core.timeToViewRatio(29, view), 0, 1e-9, 'start');
-    close(core.timeToViewRatio(33, view), 1, 1e-9, 'end');
-    close(core.viewRatioToTime(0.5, view), 31, 1e-9, 'back to time');
+    const window = { start: 29, end: 33, zoomed: true };
+    close(core.timeToViewRatio(31, window), 0.5, 1e-9, 'midpoint');
+    close(core.viewRatioToTime(0.5, window), 31, 1e-9, 'back to time');
     for (const t of [29, 30.25, 31, 32.75, 33]) {
-      close(core.viewRatioToTime(core.timeToViewRatio(t, view), view), t, 1e-9, `round-trip ${t}`);
+      close(core.viewRatioToTime(core.timeToViewRatio(t, window), window), t, 1e-9, `round-trip ${t}`);
     }
   });
 
   test('clamps a position outside the window to an edge', () => {
-    const view = { start: 29, end: 33, zoomed: true };
-    equal(core.timeToViewRatio(5, view), 0, 'before the window');
-    equal(core.timeToViewRatio(90, view), 1, 'after the window');
-    equal(core.viewRatioToTime(-1, view), 29);
-    equal(core.viewRatioToTime(2, view), 33);
+    const window = { start: 29, end: 33, zoomed: true };
+    equal(core.timeToViewRatio(5, window), 0, 'before the window');
+    equal(core.timeToViewRatio(90, window), 1, 'after the window');
+    equal(core.viewRatioToTime(-1, window), 29);
+    equal(core.viewRatioToTime(2, window), 33);
   });
 
   test('survives an unready video', () => {
-    const v = core.resolveTimelineView({ loopIn: 1, loopOut: 2, duration: NaN, fps: 30 });
-    equal(v.zoomed, false);
+    equal(view({ duration: NaN }).zoomed, false);
     equal(core.timeToViewRatio(5, { start: 0, end: 0 }), 0, 'zero-width window');
     equal(core.viewRatioToTime(0.5, { start: 0, end: 0 }), 0);
   });

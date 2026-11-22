@@ -116,35 +116,63 @@
     return null;
   };
 
-  // The slice of the video the seek bar should represent.
+  // The slice of the video the seek bar should represent, as a transition from
+  // the window currently in use rather than a fresh calculation each time.
   //
-  // A tight loop on a long video is a couple of pixels wide, which makes the
-  // handles indistinguishable and impossible to aim at. When the marked span is
-  // a small fraction of the whole, the bar zooms to a window around it so the
-  // loop occupies a usable share of the width. Everything drawn on or read from
-  // the bar goes through this window, so positions stay consistent.
-  core.resolveTimelineView = ({ loopIn, loopOut, duration, fps, zoomBelow = 0.2, padFraction = 0.5, disabled = false }) => {
+  // Stickiness is the point. Recomputing on every marker nudge made the bar
+  // rescale constantly, which is disorienting while aiming at a handle. Once a
+  // window is established it is kept as long as the markers still sit inside it
+  // and the loop has not grown large enough to need the whole video back.
+  //
+  // The decision to zoom is made in pixels, not as a fraction of duration,
+  // because what matters is whether the two handles are far enough apart on
+  // screen to aim at individually.
+  core.nextTimelineView = ({
+    current,
+    loopIn,
+    loopOut,
+    duration,
+    barWidthPx,
+    minGapPx = 190,
+    unzoomGapPx = 420,
+    minWindowSeconds = 5,
+    padFraction = 0.5,
+    disabled = false
+  }) => {
     const full = { start: 0, end: Number.isFinite(duration) && duration > 0 ? duration : 0, zoomed: false };
     if (disabled || !Number.isFinite(duration) || duration <= 0) return full;
     if (!Number.isFinite(loopIn) || !Number.isFinite(loopOut)) return full;
+    // An unlaid-out bar has no meaningful pixel width; keep whatever is in use
+    // rather than thrashing on a zero measurement.
+    if (!Number.isFinite(barWidthPx) || barWidthPx <= 0) return current || full;
 
     const a = Math.min(loopIn, loopOut);
     const b = Math.max(loopIn, loopOut);
     const span = b - a;
-    if (span <= 0 || span / duration >= zoomBelow) return full;
+    if (span <= 0) return full;
 
-    // Pad so the loop sits in the middle of the window rather than filling it,
-    // leaving room to drag a marker outwards. The frame-based floor stops an
-    // extremely short loop zooming to a uselessly tiny window.
-    const pad = Math.max(span * padFraction, Number.isFinite(fps) && fps > 0 ? 4 / fps : 0);
-    let start = a - pad;
-    let end = b + pad;
-    const width = end - start;
-    // Running off either end slides the window rather than shrinking it, so the
-    // zoom level stays steady as the loop approaches the start or finish.
+    const gapAt = (windowWidth) => (windowWidth > 0 ? (span / windowWidth) * barWidthPx : 0);
+
+    // Keep the established window while it still works.
+    if (current && current.zoomed && current.end > current.start) {
+      const insideWindow = a >= current.start && b <= current.end;
+      const gap = gapAt(current.end - current.start);
+      if (insideWindow && gap <= unzoomGapPx) return current;
+      if (gap > unzoomGapPx) return full;
+    } else if (gapAt(duration) >= minGapPx) {
+      // Already far enough apart on screen at full scale; nothing to fix.
+      return full;
+    }
+
+    // Centring on the loop keeps the window stable as a marker moves, and the
+    // minimum width caps how far in the bar will ever zoom.
+    const width = Math.min(duration, Math.max(span * (1 + 2 * padFraction), minWindowSeconds));
+    const middle = (a + b) / 2;
+    let start = middle - width / 2;
+    let end = start + width;
     if (start < 0) {
       start = 0;
-      end = Math.min(duration, width);
+      end = width;
     }
     if (end > duration) {
       end = duration;

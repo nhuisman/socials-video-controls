@@ -21,7 +21,12 @@
 
   // A-B loop, for practising a single move
   const LOOP_MIN_FRAMES = 3;
-  const ZOOM_BELOW_FRACTION = 0.2;
+  // ~2 inches at 96dpi: the point below which two handles are too close to aim
+  // at individually. Unzoom only once they are much further apart, so the bar
+  // does not flip back and forth around a single threshold.
+  const ZOOM_MIN_GAP_PX = 190;
+  const ZOOM_UNZOOM_GAP_PX = 420;
+  const ZOOM_MIN_WINDOW_SECONDS = 5;
   const ZOOM_PAD_FRACTION = 0.5;
   const KEYS_LOOP_IN = new Set(['[', '{']);
   const KEYS_LOOP_OUT = new Set([']', '}']);
@@ -320,7 +325,7 @@
     bar.innerHTML = `
       <button type="button" class="ig-vc-btn ig-vc-play"></button>
       <span class="ig-vc-time">0:00 / 0:00</span>
-      <div class="ig-vc-seek"><div class="ig-vc-track"><div class="ig-vc-buffer"></div><div class="ig-vc-loop-span"></div><div class="ig-vc-fill"></div></div><div class="ig-vc-handle ig-vc-handle-a"></div><div class="ig-vc-handle ig-vc-handle-b"></div></div>
+      <div class="ig-vc-seek"><div class="ig-vc-track"><div class="ig-vc-buffer"></div><div class="ig-vc-loop-span"></div><div class="ig-vc-fill"></div></div><div class="ig-vc-playhead"></div><div class="ig-vc-handle ig-vc-handle-a"></div><div class="ig-vc-handle ig-vc-handle-b"></div><div class="ig-vc-hint"></div></div>
       <div class="ig-vc-wrap">
         <button type="button" class="ig-vc-btn ig-vc-mute"></button>
         <div class="ig-vc-popup"><div class="ig-vc-box">
@@ -353,6 +358,7 @@
     ].map((sel) => bar.querySelector(sel));
     const loopClearBtn = bar.querySelector('.ig-vc-loop-clear');
     const loopZoomBtn = bar.querySelector('.ig-vc-loop-zoom');
+    const hintEl = bar.querySelector('.ig-vc-hint');
     const handleA = bar.querySelector('.ig-vc-handle-a');
     const handleB = bar.querySelector('.ig-vc-handle-b');
     const seekTrack = seekEl.querySelector('.ig-vc-track');
@@ -462,17 +468,25 @@
       minFrames: LOOP_MIN_FRAMES
     });
 
-    // The window the seek bar currently represents. Everything painted on the
-    // bar and every position read back from it goes through this.
-    const currentView = () => core.resolveTimelineView({
-      loopIn,
-      loopOut,
-      duration: video.duration,
-      fps: frameClock.fps,
-      zoomBelow: ZOOM_BELOW_FRACTION,
-      padFraction: ZOOM_PAD_FRACTION,
-      disabled: zoomDisabled
-    });
+    // The window the seek bar currently represents. Held as state rather than
+    // derived fresh each time, so nudging a marker does not rescale the bar.
+    let timelineView = null;
+
+    const currentView = () => {
+      timelineView = core.nextTimelineView({
+        current: timelineView,
+        loopIn,
+        loopOut,
+        duration: video.duration,
+        barWidthPx: seekTrack.getBoundingClientRect().width,
+        minGapPx: ZOOM_MIN_GAP_PX,
+        unzoomGapPx: ZOOM_UNZOOM_GAP_PX,
+        minWindowSeconds: ZOOM_MIN_WINDOW_SECONDS,
+        padFraction: ZOOM_PAD_FRACTION,
+        disabled: zoomDisabled
+      });
+      return timelineView;
+    };
 
     // End of the buffered range covering a given time, which is how far stepping
     // can go without touching the network.
@@ -636,6 +650,7 @@
         // A drag supersedes any queued frame steps.
         pendingDelta = 0;
         intendedFrame = null;
+        showHint('playhead');
         // Dragging is the most seek-heavy thing the bar does, so ask for the file.
         if (!preloadNudged) {
           preloadNudged = true;
@@ -653,6 +668,7 @@
         }
         dragTargetTime = null;
         dragDirty = false;
+        showHint(null);
         if (wasPlaying) requestPlay();
         updateTime();
       }
@@ -864,6 +880,7 @@
         if (wasPlaying) requestPause();
         pendingDelta = 0;
         intendedFrame = null;
+        showHint(which);
         revealBar(true);
         moveTrim(e.clientX);
       });
@@ -878,6 +895,7 @@
           trimDrag = null;
           dragTargetTime = null;
           dragDirty = false;
+          showHint(null);
           // Trimming while looping should resume inside the new range, not from
           // wherever the handle was dropped.
           if (wasPlaying) requestPlay();
@@ -889,6 +907,36 @@
 
     bindTrimHandle(handleA, 'in');
     bindTrimHandle(handleB, 'out');
+
+    // The hotkey hint shown while dragging, so the marker shortcuts are
+    // discoverable at the moment they are useful rather than only in the README.
+    let hintMode = null;
+
+    const showHint = (mode) => {
+      hintMode = mode;
+      let text = '';
+      if (mode === 'in') text = 'dragging A';
+      else if (mode === 'out') text = 'dragging B';
+      else if (mode === 'playhead') {
+        if (loopIn === null) text = 'press  [  to set A here';
+        else if (loopOut === null) text = 'press  ]  to set B here';
+        else text = 'press  [  or  ]  to move A or B here';
+      }
+      hintEl.textContent = text;
+      hintEl.classList.toggle('visible', Boolean(text));
+    };
+
+    // Setting a marker mid-drag changes which hotkey is useful next, so the hint
+    // is re-rendered rather than left showing a stale instruction.
+    const refreshHint = () => showHint(hintMode);
+
+    // While dragging, a marker belongs at the pointer, not at the video's
+    // position: paced seeking means currentTime lags behind the pointer, so
+    // reading it would place the marker a few frames off where it looks.
+    const markerTimeNow = () => core.frameCenter(
+      core.frameIndexAt(dragTargetTime ?? video.currentTime, frameClock.fps),
+      frameClock.fps
+    );
 
     const loopTick = () => {
       loopRafHandle = null;
@@ -920,16 +968,17 @@
     // it again.
     const setLoopIn = () => {
       if (!Number.isFinite(video.duration) || video.duration <= 0) return false;
-      loopIn = core.frameCenter(currentFrameIndex(), frameClock.fps);
+      loopIn = markerTimeNow();
       if (loopOut !== null && loopOut <= loopIn) loopOut = null;
       revealBar(true);
+      refreshHint();
       sync();
       return true;
     };
 
     const setLoopOut = () => {
       if (!Number.isFinite(video.duration) || video.duration <= 0) return false;
-      loopOut = core.frameCenter(currentFrameIndex(), frameClock.fps);
+      loopOut = markerTimeNow();
       if (loopIn !== null && loopIn >= loopOut) loopIn = null;
       // Marking the end of a move is the natural moment to start practising it.
       if (loopIn !== null && loopRange()) {
@@ -937,6 +986,7 @@
         startLoopWatcher();
       }
       revealBar(true);
+      refreshHint();
       sync();
       return true;
     };

@@ -115,6 +115,51 @@
   transform: translateY(0);
 }
 
+/* Current position. The fill's leading edge was indistinguishable against the
+   loop span, so the playhead is its own high-contrast marker with a dark
+   outline that reads against white fill, blue span and bare track alike. */
+.ig-vc-playhead {
+  position: absolute;
+  top: 50%;
+  left: var(--v, 0%);
+  width: 2px;
+  height: 16px;
+  margin-left: -1px;
+  transform: translateY(-50%);
+  background: #fff;
+  border-radius: 1px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.75), 0 0 3px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.ig-vc-player:fullscreen .ig-vc-playhead {
+  height: 20px;
+}
+
+/* Hotkey hint, floated above the bar during a drag. Absolutely positioned so it
+   cannot affect the bar's layout, which has no spare width. */
+.ig-vc-hint {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 3px 7px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.78);
+  color: #fff;
+  font-size: 10px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+  z-index: 3;
+}
+
+.ig-vc-hint.visible {
+  opacity: 1;
+}
+
 /* Trim handles. Children of .ig-vc-seek rather than .ig-vc-track, because the
    track clips its overflow and would cut them off. */
 .ig-vc-handle {
