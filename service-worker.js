@@ -3,7 +3,7 @@
 // Automatically inject CSS & JS into already-open Instagram tabs on install/reload
 chrome.runtime.onInstalled.addListener(async () => {
   try {
-    const tabs = await chrome.tabs.query({ url: '*://*.instagram.com/*' });
+    const tabs = await chrome.tabs.query({ url: ['*://*.instagram.com/*', '*://*.facebook.com/*'] });
     for (const tab of tabs) {
       if (!tab.id) continue;
       try {
@@ -13,7 +13,7 @@ chrome.runtime.onInstalled.addListener(async () => {
         });
         await chrome.scripting.executeScript({
           target: { tabId: tab.id },
-          files: ['content/content.js']
+          files: ['content/core.js', 'content/content.js']
         });
       } catch (err) {
         // Ignore restricted tabs

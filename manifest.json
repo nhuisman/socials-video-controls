@@ -1,14 +1,15 @@
 {
   "manifest_version": 3,
-  "name": "Instagram Video Control",
-  "version": "1.0.2",
-  "description": "Minimal video control bar for Instagram with seek timeline, persistent volume, and playback speed.",
+  "name": "Socials Video Controls",
+  "version": "1.6.0",
+  "description": "Video control bar for Instagram, plus arrow-key frame stepping and jog scrubbing on Instagram and Facebook.",
   "permissions": [
     "storage",
     "scripting"
   ],
   "host_permissions": [
-    "*://*.instagram.com/*"
+    "*://*.instagram.com/*",
+    "*://*.facebook.com/*"
   ],
   "background": {
     "service_worker": "service-worker.js"
@@ -21,12 +22,14 @@
   "content_scripts": [
     {
       "matches": [
-        "*://*.instagram.com/*"
+        "*://*.instagram.com/*",
+        "*://*.facebook.com/*"
       ],
       "css": [
         "content/content.css"
       ],
       "js": [
+        "content/core.js",
         "content/content.js"
       ],
       "run_at": "document_idle"

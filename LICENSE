@@ -1,6 +1,13 @@
 MIT License
 
 Copyright (c) 2026 Surya Kencana Putra
+Copyright (c) 2026 Nathan Huisman
+
+This project is a derivative of Instagram Video Control by Surya Kencana Putra
+(https://git.skp.my.id/surya/instagram-video-control). The original copyright
+notice above is retained as the MIT License requires. Modifications made in
+this fork are copyright their respective authors and are released under the
+same terms.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

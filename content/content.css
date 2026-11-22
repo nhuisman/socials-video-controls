@@ -25,7 +25,7 @@
   transition: transform 0.18s ease !important;
 }
 
-.ig-vc-player:is(:hover:not(:fullscreen.idle), .dragging),
+.ig-vc-player:is(:hover:not(:fullscreen.idle), .dragging, .ig-vc-kb),
 .ig-vc-host:has(.ig-vc-series-overlay:hover) .ig-vc-player:not(:fullscreen.idle) {
   & .ig-vc-bar {
     pointer-events: auto;
@@ -52,7 +52,7 @@
   justify-content: center !important;
 }
 
-.ig-vc-player:fullscreen.idle:not(.dragging) {
+.ig-vc-player:fullscreen.idle:not(.dragging, .ig-vc-kb) {
   cursor: none !important;
 }
 
@@ -84,6 +84,28 @@
   opacity: 0;
   transform: translateY(28px);
   transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+/* Augment mode (Facebook): the site already has a full player, so everything
+   except the frame readout is suppressed and the remainder sits top-left, clear
+   of the native controls along the bottom edge. */
+.ig-vc-bar.ig-vc-augment {
+  inset: 0 auto auto 0;
+  height: auto;
+  width: auto;
+  padding: 4px 7px;
+  gap: 0;
+  border-radius: 0 0 6px 0;
+  background: rgba(0, 0, 0, 0.55);
+  transform: translateY(-100%);
+}
+
+.ig-vc-bar.ig-vc-augment > :not(.ig-vc-time) {
+  display: none !important;
+}
+
+.ig-vc-player:is(:hover:not(:fullscreen.idle), .dragging, .ig-vc-kb) .ig-vc-bar.ig-vc-augment {
+  transform: translateY(0);
 }
 
 /* Buttons & thin Lucide icons */
@@ -145,6 +167,18 @@
 
 .ig-vc-seek:hover .ig-vc-track {
   height: 4px;
+}
+
+/* Downloaded range, drawn behind the playback fill so stepping ahead of the
+   buffer is visible rather than just feeling slow */
+.ig-vc-buffer {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: var(--b, 0%);
+  height: 100%;
+  background: rgba(255, 255, 255, 0.28);
+  border-radius: 99px;
 }
 
 .ig-vc-fill {
@@ -216,6 +250,28 @@
 .ig-vc-vol .ig-vc-fill {
   width: 100%;
   height: var(--v, 100%);
+}
+
+/* Cache button, which widens to show download progress as text */
+.ig-vc-cache {
+  width: 26px;
+}
+
+.ig-vc-cache.ig-vc-cache-text {
+  width: 30px;
+  font-size: 10px;
+  font-weight: 400;
+  text-align: center;
+  text-box: trim-both cap alphabetic;
+}
+
+.ig-vc-cache.active {
+  opacity: 1;
+  color: #fff;
+}
+
+.ig-vc-cache.unavailable {
+  opacity: 0.4;
 }
 
 /* Speed Button & Vertical List */
