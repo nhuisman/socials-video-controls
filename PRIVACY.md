@@ -21,7 +21,7 @@ The Extension makes exactly one kind of network request, and only when you ask i
 ### 2. Permissions & Local Storage Usage
 The Extension requires minimal browser permissions to operate:
 
-- **`storage`**: Used solely to persist your chosen video preferences (playback volume, mute state, and playback speed) locally on your device via the browser's `chrome.storage.local` API. This data never leaves your browser.
+- **`storage`**: Used solely to persist your chosen video preferences (playback volume, mute state, playback speed, and loop practice speed) locally on your device via the browser's `chrome.storage.local` API. This data never leaves your browser.
 - **`scripting`**: Used to attach the video control UI and styles into already-open Instagram tabs when the extension is installed or updated.
 - **`*://*.instagram.com/*`** and **`*://*.facebook.com/*`**: Restricts the extension's execution strictly to Instagram and Facebook web pages, to inject the custom playback bar, listen for video element events, and enable seek, frame-stepping and fullscreen functionality. The Extension reads only video elements and their surrounding player markup. It does not read, collect or transmit your feed, messages, profile, friends, or any account information on either site.
 
@@ -39,6 +39,14 @@ The control bar includes a download button that pre-loads the current video so y
 - Videos that Instagram streams in segments cannot be cached, and in that case the button reports that it is unavailable and no request is made at all.
 
 Caching is never enabled automatically and is off by default.
+
+---
+
+### 2b. Page URL and Clipboard
+The loop feature can share a marked segment as a link:
+
+- The Extension reads the page's own URL fragment at page load, so a link such as `.../p/abc/#loop=30,34.5` opens at that loop. It reads the address of the page you are already on and nothing else; no browsing history and no other tabs are accessed.
+- The **link** button writes a URL to your clipboard when you click it, and only then. That URL is the page you are viewing plus the loop times. Nothing is ever read from your clipboard, and nothing is transmitted anywhere.
 
 ---
 

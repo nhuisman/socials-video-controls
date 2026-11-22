@@ -184,6 +184,12 @@
   // site's own controls alone and contributes only what they lack — frame
   // stepping, jog scrubbing and the frame readout — which is the right posture on
   // Facebook, where a full player already exists.
+  // A loop shared by URL belongs to the video the link was opened for, so it is
+  // consumed by the first player able to accept it rather than applied to every
+  // video in a feed. The launch URL is read from the document_start capture,
+  // falling back to the live location where the site has not rewritten it.
+  let pendingUrlLoop = core.parseLoopFromUrl(window.__igVcLaunchUrl?.hash || location.hash);
+
   const SITE_ADAPTERS = {
     instagram: {
       mode: 'replace',
@@ -353,6 +359,7 @@
           <button type="button" class="ig-vc-opt ig-vc-loop-in">A</button>
           <button type="button" class="ig-vc-opt ig-vc-loop-out">B</button>
           <button type="button" class="ig-vc-opt ig-vc-loop-clear">clr</button>
+          <button type="button" class="ig-vc-opt ig-vc-loop-link">link</button>
           <button type="button" class="ig-vc-opt ig-vc-loop-zoom">fit</button>
         </div></div>
       </div>
@@ -367,6 +374,7 @@
     ].map((sel) => bar.querySelector(sel));
     const loopClearBtn = bar.querySelector('.ig-vc-loop-clear');
     const loopZoomBtn = bar.querySelector('.ig-vc-loop-zoom');
+    const loopLinkBtn = bar.querySelector('.ig-vc-loop-link');
     const hintEl = bar.querySelector('.ig-vc-hint');
     const loopSpeedOpts = bar.querySelectorAll('.ig-vc-loop-speed');
     const handleA = bar.querySelector('.ig-vc-handle-a');
@@ -470,6 +478,7 @@
     let loopRafHandle = null;
     let zoomDisabled = false;
     let preLoopRate = null;
+    let linkFeedbackTimer = null;
 
     const loopRange = () => core.normalizeLoop({
       start: loopIn,
@@ -590,6 +599,14 @@
       const loopRate = core.clampPlaybackRate(settings.loopRate, 1);
       for (const opt of loopSpeedOpts) {
         opt.classList.toggle('active', Math.abs(Number(opt.dataset.loopSpeed) - loopRate) < 0.001);
+      }
+
+      if (linkFeedbackTimer === null) {
+        loopLinkBtn.textContent = 'link';
+        loopLinkBtn.classList.toggle('unavailable', !range);
+        loopLinkBtn.title = range
+          ? 'Copy a link to this video that opens at this loop'
+          : 'Set both A and B to copy a loop link';
       }
 
       fsBtn.innerHTML = document.fullscreenElement?.contains(video) ? ICONS.minimize : ICONS.maximize;
@@ -761,6 +778,8 @@
       ac.abort();
       frameClock.stop();
       clearTimeout(revealTimer);
+      clearTimeout(linkFeedbackTimer);
+      linkFeedbackTimer = null;
       stopLoopWatcher();
       pendingDelta = 0;
       seekInFlight = false;
@@ -992,6 +1011,35 @@
       core.frameIndexAt(dragTargetTime ?? video.currentTime, frameClock.fps),
       frameClock.fps
     );
+
+    // Applies a loop carried in the launch URL, once, to the first player that
+    // can take it. Clamped to the media, since a shared link may name times past
+    // the end of a different or re-encoded video.
+    const applyUrlLoop = () => {
+      if (!pendingUrlLoop) return;
+      if (!Number.isFinite(video.duration) || video.duration <= 0) return;
+      const wanted = pendingUrlLoop;
+      pendingUrlLoop = null;
+      const fps = frameClock.fps;
+      const snap = (t) => core.frameCenter(
+        core.clampFrame(core.frameIndexAt(Math.min(t, video.duration), fps), core.lastFrameIndexFor(video.duration, fps)),
+        fps
+      );
+      loopIn = snap(wanted.start);
+      loopOut = snap(wanted.end);
+      if (Number.isFinite(wanted.rate)) saveSettings({ loopRate: core.clampPlaybackRate(wanted.rate, 1) });
+      if (loopRange()) {
+        looping = true;
+        startLoopWatcher();
+      } else {
+        loopIn = null;
+        loopOut = null;
+      }
+      revealBar(true);
+      refreshHint();
+      sync();
+      updateTime();
+    };
 
     const loopTick = () => {
       loopRafHandle = null;
@@ -1344,6 +1392,46 @@
         sync();
       });
     }
+    loopLinkBtn.addEventListener('click', async () => {
+      const range = loopRange();
+      if (!range) {
+        revealBar(true);
+        sync();
+        return;
+      }
+      const url = core.formatLoopUrl(location.href, range.start, range.end, settings.loopRate);
+      if (!url) return;
+      let copied = false;
+      try {
+        await navigator.clipboard.writeText(url);
+        copied = true;
+      } catch (e) {
+        // The async clipboard API needs a trusted gesture and a focused
+        // document, and refuses otherwise. Fall back to the older selection
+        // route, which succeeds in some of those cases.
+        try {
+          const scratch = document.createElement('textarea');
+          scratch.value = url;
+          scratch.setAttribute('readonly', '');
+          scratch.style.cssText = 'position:fixed;top:-1000px;opacity:0;';
+          document.body.appendChild(scratch);
+          scratch.select();
+          copied = document.execCommand('copy');
+          scratch.remove();
+        } catch (err) {
+          // Both routes refused; the URL is still offered in the tooltip so the
+          // loop is not lost.
+        }
+      }
+      loopLinkBtn.textContent = copied ? 'ok' : 'err';
+      loopLinkBtn.title = copied ? `Copied ${url}` : `Could not reach the clipboard. The link is: ${url}`;
+      clearTimeout(linkFeedbackTimer);
+      linkFeedbackTimer = setTimeout(() => {
+        linkFeedbackTimer = null;
+        sync();
+      }, 1600);
+      revealBar(true);
+    });
     loopClearBtn.addEventListener('click', clearLoop);
     loopZoomBtn.addEventListener('click', () => {
       zoomDisabled = !zoomDisabled;
@@ -1407,6 +1495,7 @@
       mount();
       sync();
       updateTime();
+      applyUrlLoop();
     }, { signal });
     video.addEventListener('timeupdate', updateTime, { signal });
     video.addEventListener('progress', updateTime, { signal });
@@ -1424,6 +1513,7 @@
     mount();
     sync();
     updateTime();
+    applyUrlLoop();
 
     controllers.set(video, {
       mount, sync, destroy, stepFrames, togglePlay, beginScrub, endScrub,

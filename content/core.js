@@ -209,6 +209,57 @@
     return view.start + Math.min(1, Math.max(0, ratio)) * span;
   };
 
+  // Reads loop times out of a URL fragment, in the form
+  //   #loop=<start>,<end>[,<rate>]
+  // Tolerant on purpose: accepts a bare fragment or one parameter among several,
+  // accepts the markers in either order, and rejects anything it cannot read
+  // rather than guessing.
+  core.parseLoopFromUrl = (input) => {
+    if (typeof input !== 'string' || !input) return null;
+    const hashIndex = input.indexOf('#');
+    const fragment = hashIndex >= 0 ? input.slice(hashIndex + 1) : input;
+    if (!fragment) return null;
+
+    let raw = null;
+    for (const part of fragment.split('&')) {
+      const eq = part.indexOf('=');
+      if (eq < 0) continue;
+      if (part.slice(0, eq).trim().toLowerCase() !== 'loop') continue;
+      try {
+        raw = decodeURIComponent(part.slice(eq + 1));
+      } catch (e) {
+        raw = part.slice(eq + 1);
+      }
+    }
+    if (!raw) return null;
+
+    const pieces = raw.split(',').map((piece) => Number(piece.trim()));
+    const [start, end, rate] = pieces;
+    if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
+    if (start < 0 || end < 0) return null;
+    const a = Math.min(start, end);
+    const b = Math.max(start, end);
+    if (b - a <= 0) return null;
+
+    const parsed = { start: a, end: b };
+    if (pieces.length > 2 && Number.isFinite(rate) && rate > 0) parsed.rate = rate;
+    return parsed;
+  };
+
+  // Builds a shareable URL for a loop, replacing any fragment already present.
+  // A rate of 1 is left out, since it is the default and only adds noise.
+  core.formatLoopUrl = (href, loopIn, loopOut, rate) => {
+    if (typeof href !== 'string' || !href) return null;
+    if (!Number.isFinite(loopIn) || !Number.isFinite(loopOut)) return null;
+    const a = Math.min(loopIn, loopOut);
+    const b = Math.max(loopIn, loopOut);
+    if (b - a <= 0 || a < 0) return null;
+    const round = (n) => Number(n.toFixed(2));
+    const parts = [round(a), round(b)];
+    if (Number.isFinite(rate) && rate > 0 && Math.abs(rate - 1) > 1e-9) parts.push(round(rate));
+    return `${href.split('#')[0]}#loop=${parts.join(',')}`;
+  };
+
   // Keeps a playback rate inside what browsers accept. Assigning a rate outside
   // this range throws, so an out-of-range or malformed value falls back rather
   // than taking the player down.

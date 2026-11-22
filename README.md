@@ -178,6 +178,23 @@ The workflow this was built for: watch a dance video, find a move, bracket it, a
 4. Press `Home` at any time to jump back to the start, whether or not looping is on.
 5. `\` stops and starts looping; `|` clears both markers.
 6. Pick a **loop speed** from the menu on the loop button — `0.1x`, `0.25x`, `0.5x`, `0.75x` or `1x`. Studying a fast move at a quarter speed is the point of the whole feature.
+7. Press **link** in the loop popup to copy a URL that opens the video at this loop, at this speed. Open that URL later, or send it to someone, and the markers are placed for you.
+
+### Sharing a loop by link
+
+The `link` button copies the page URL with the loop appended as a fragment:
+
+```
+https://www.instagram.com/p/Dfo3mUzgJQJ/#loop=30,34.5,0.25
+```
+
+Start, end, and an optional practice speed. The speed is left out when it is `1x`. Opening a URL like this places the markers, starts looping, and applies the speed. Times are clamped to the video, so a link naming times past the end of a shorter video degrades rather than breaking, and markers snap to frame centres, which can shift a shared time by up to half a frame.
+
+A link applies to the first player that can take it, then is consumed — so opening a link while a feed is on screen does not stamp the same loop onto every video in it.
+
+**This required reading the URL earlier than the rest of the extension runs.** Facebook rewrites the address bar about 1.3 seconds into page load and removes the fragment, comfortably before `DOMContentLoaded`. A script at `document_idle`, where everything else here runs, would read an address that has already been cleaned. So `content/capture-url.js` runs at `document_start`, does nothing but record the URL, and exits; the rest of the extension reads that recorded copy. Instagram keeps the fragment indefinitely, but reading early is correct on both and avoids a per-site special case.
+
+The consequence is that **writing** the fragment back is not attempted. On Instagram it would survive; on Facebook it would be wiped within seconds, so the button copies to the clipboard rather than reflecting the loop in the address bar. If the clipboard refuses — it needs a trusted click and a focused document — the link appears in the button's tooltip instead so it is never lost.
 
 ### Loop speed
 

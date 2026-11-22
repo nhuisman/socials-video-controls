@@ -887,6 +887,95 @@ group('timeline zoom', () => {
 });
 
 
+group('loop links', () => {
+  test('reads loop times from a fragment', () => {
+    const r = core.parseLoopFromUrl('https://www.instagram.com/p/abc/#loop=22.68,31.18');
+    equal(r.start, 22.68);
+    equal(r.end, 31.18);
+    equal(r.rate, undefined, 'no rate given');
+  });
+
+  test('reads an optional practice rate', () => {
+    const r = core.parseLoopFromUrl('#loop=5,10,0.25');
+    equal(r.start, 5);
+    equal(r.end, 10);
+    equal(r.rate, 0.25);
+  });
+
+  test('accepts a bare fragment or one parameter among several', () => {
+    assert(core.parseLoopFromUrl('loop=5,10'), 'bare, no hash');
+    assert(core.parseLoopFromUrl('#loop=5,10'), 'bare fragment');
+    const mixed = core.parseLoopFromUrl('#other=1&loop=5,10&more=2');
+    equal(mixed.start, 5, 'one parameter among several');
+    equal(mixed.end, 10);
+    note('tolerant of other fragment content, since the sites use fragments themselves');
+  });
+
+  test('sorts markers given in either order', () => {
+    const r = core.parseLoopFromUrl('#loop=31.18,22.68');
+    equal(r.start, 22.68);
+    equal(r.end, 31.18);
+  });
+
+  test('rejects anything it cannot read rather than guessing', () => {
+    equal(core.parseLoopFromUrl('https://example.com/p/abc/'), null, 'no fragment');
+    equal(core.parseLoopFromUrl('#loop='), null, 'empty value');
+    equal(core.parseLoopFromUrl('#loop=abc,def'), null, 'not numbers');
+    equal(core.parseLoopFromUrl('#loop=5'), null, 'only one time');
+    equal(core.parseLoopFromUrl('#loop=5,5'), null, 'zero length');
+    equal(core.parseLoopFromUrl('#loop=-5,10'), null, 'negative');
+    equal(core.parseLoopFromUrl('#other=1,2'), null, 'different parameter');
+    equal(core.parseLoopFromUrl(''), null);
+    equal(core.parseLoopFromUrl(null), null);
+    equal(core.parseLoopFromUrl(42), null);
+  });
+
+  test('ignores a nonsensical rate but keeps the loop', () => {
+    const r = core.parseLoopFromUrl('#loop=5,10,0');
+    equal(r.start, 5);
+    equal(r.rate, undefined, 'a zero rate is dropped, not applied');
+  });
+
+  test('builds a shareable link', () => {
+    equal(core.formatLoopUrl('https://www.instagram.com/p/abc/', 22.68, 31.18),
+      'https://www.instagram.com/p/abc/#loop=22.68,31.18');
+  });
+
+  test('includes a rate only when it is not the default', () => {
+    equal(core.formatLoopUrl('https://x/p/a/', 5, 10, 1), 'https://x/p/a/#loop=5,10', '1x is left out');
+    equal(core.formatLoopUrl('https://x/p/a/', 5, 10, 0.25), 'https://x/p/a/#loop=5,10,0.25');
+    equal(core.formatLoopUrl('https://x/p/a/', 5, 10), 'https://x/p/a/#loop=5,10', 'no rate given');
+  });
+
+  test('replaces an existing fragment rather than appending', () => {
+    equal(core.formatLoopUrl('https://x/p/a/#loop=1,2', 5, 10), 'https://x/p/a/#loop=5,10');
+    equal(core.formatLoopUrl('https://x/p/a/#other', 5, 10), 'https://x/p/a/#loop=5,10');
+  });
+
+  test('rounds to hundredths to keep links short', () => {
+    equal(core.formatLoopUrl('https://x/', 22.6789123, 31.1812345), 'https://x/#loop=22.68,31.18');
+  });
+
+  test('refuses to build a link from an unusable loop', () => {
+    equal(core.formatLoopUrl('https://x/', 5, 5), null, 'zero length');
+    equal(core.formatLoopUrl('https://x/', NaN, 10), null);
+    equal(core.formatLoopUrl('', 5, 10), null, 'no base URL');
+    equal(core.formatLoopUrl(null, 5, 10), null);
+    equal(core.formatLoopUrl('https://x/', -1, 10), null, 'negative');
+  });
+
+  test('round-trips a loop through a link', () => {
+    for (const [a, b, rate] of [[22.68, 31.18, undefined], [0.5, 1.75, 0.25], [100, 250.33, 0.5]]) {
+      const url = core.formatLoopUrl('https://www.instagram.com/p/abc/', a, b, rate);
+      const back = core.parseLoopFromUrl(url);
+      close(back.start, a, 0.005, 'start survived');
+      close(back.end, b, 0.005, 'end survived');
+      if (rate && Math.abs(rate - 1) > 1e-9) close(back.rate, rate, 1e-9, 'rate survived');
+    }
+    note('what is written can be read back, which is the only property that matters here');
+  });
+});
+
 //#region Summary
 
 console.log('');

@@ -13,7 +13,7 @@ chrome.runtime.onInstalled.addListener(async () => {
         });
         await chrome.scripting.executeScript({
           target: { tabId: tab.id },
-          files: ['content/core.js', 'content/content.js']
+          files: ['content/capture-url.js', 'content/core.js', 'content/content.js']
         });
       } catch (err) {
         // Ignore restricted tabs
