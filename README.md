@@ -177,6 +177,19 @@ The workflow this was built for: watch a dance video, find a move, bracket it, a
 3. Refine with the arrow keys. Step to the exact frame you want and press `[` or `]` again to move that marker.
 4. Press `Home` at any time to jump back to the start, whether or not looping is on.
 5. `\` stops and starts looping; `|` clears both markers.
+6. Pick a **loop speed** from the menu on the loop button — `0.1x`, `0.25x`, `0.5x`, `0.75x` or `1x`. Studying a fast move at a quarter speed is the point of the whole feature.
+
+### Loop speed
+
+The loop button carries a menu: speeds above a divider, the loop actions below it.
+
+Loop speed is deliberately **separate from the general playback speed**, so you can watch a video at normal speed and practise a bracketed move at `0.25x` without changing one to adjust the other. The loop borrows the rate when looping starts and hands it back when looping stops, and the speed you pick is remembered for the next loop.
+
+Changing the speed while a loop is running applies immediately, so the menu is a live control rather than a setting for next time. The rate is clamped to what browsers accept — assigning one outside that range throws and would otherwise take the player down.
+
+On Facebook this is the one case where the extension does set playback speed, which it otherwise leaves alone: a loop speed is a deliberate request rather than a background assertion, and the previous rate is restored when looping ends.
+
+If you used the arrow keys to find the move, keyboard navigation will have muted the video. Press `Space` to play the loop and the sound comes back with it, which matters when the music is the point.
 
 The same controls are on the bar: a loop toggle that carries the state, a jump-back-to-A button, and a popup on the toggle holding `A`, `B`, `clr` and the zoom switch. Right-clicking the loop toggle clears the markers. They are available on Facebook too, where most of the bar is hidden, because looping is the point of the tool on a dance video.
 
@@ -206,7 +219,7 @@ On Facebook the extension shows a compact 150px trim timeline for this purpose. 
 - **Order does not matter.** Mark the end before the start if that is how you spotted it; the range sorts itself.
 - **Very short loops are refused.** A range under three frames thrashes the decoder and shows nothing useful, so the loop toggle stays disabled until the span is worth playing.
 - **Restarts are paced** through the same single-seek-in-flight path as everything else, so a tight loop cannot issue a new seek before the last one landed.
-- **Slow it down.** On Instagram, combine the loop with the speed control (`0.5x` or `0.25x`) to study a fast move. On Facebook, use their own speed control — the extension does not touch playback speed there.
+- **Slow it down.** The loop speed menu on the loop button is the control for this. On Instagram the bar's separate speed control still sets the general playback speed; on Facebook that one belongs to their player.
 - Markers belong to the video. They clear when the player loads something else, since Instagram and Facebook both recycle `<video>` elements between posts.
 
 ---

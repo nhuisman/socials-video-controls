@@ -196,6 +196,15 @@
     return view.start + Math.min(1, Math.max(0, ratio)) * span;
   };
 
+  // Keeps a playback rate inside what browsers accept. Assigning a rate outside
+  // this range throws, so an out-of-range or malformed value falls back rather
+  // than taking the player down.
+  core.clampPlaybackRate = (rate, fallback = 1, min = 0.0625, max = 16) => {
+    const n = Number(rate);
+    if (!Number.isFinite(n) || n <= 0) return fallback;
+    return Math.min(max, Math.max(min, n));
+  };
+
   // Clamps a dragged loop marker so it stays inside the media and cannot cross
   // the other marker: an in point stops minFrames short of the out point, and
   // vice versa. Returns null when the video is not ready.

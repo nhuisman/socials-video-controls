@@ -867,6 +867,35 @@ group('timeline zoom', () => {
   });
 });
 
+group('playback rate clamping', () => {
+  test('passes through a rate browsers accept', () => {
+    equal(core.clampPlaybackRate(0.25), 0.25);
+    equal(core.clampPlaybackRate(1), 1);
+    equal(core.clampPlaybackRate(2), 2);
+    equal(core.clampPlaybackRate(0.1), 0.1);
+  });
+
+  test('clamps a rate outside the accepted range', () => {
+    equal(core.clampPlaybackRate(0.01), 0.0625, 'below the floor');
+    equal(core.clampPlaybackRate(100), 16, 'above the ceiling');
+    note('assigning playbackRate outside this range throws, so clamping keeps the player alive');
+  });
+
+  test('falls back rather than throwing on a bad value', () => {
+    equal(core.clampPlaybackRate(0), 1);
+    equal(core.clampPlaybackRate(-2), 1);
+    equal(core.clampPlaybackRate(NaN), 1);
+    equal(core.clampPlaybackRate(null), 1);
+    equal(core.clampPlaybackRate(undefined), 1);
+    equal(core.clampPlaybackRate('nonsense'), 1);
+    equal(core.clampPlaybackRate(undefined, 0.5), 0.5, 'honours a custom fallback');
+  });
+
+  test('accepts a numeric string, as a stored setting may be', () => {
+    equal(core.clampPlaybackRate('0.25'), 0.25);
+  });
+});
+
 //#region Summary
 
 console.log('');

@@ -7,8 +7,10 @@
   for (const el of document.querySelectorAll('.ig-vc-host')) el.classList.remove('ig-vc-host');
   for (const el of document.querySelectorAll('.ig-vc-series-overlay')) el.classList.remove('ig-vc-series-overlay');
 
-  const DEFAULT_SETTINGS = { volume: 1, muted: false, playbackRate: 1 };
+  const DEFAULT_SETTINGS = { volume: 1, muted: false, playbackRate: 1, loopRate: 1 };
   const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
+  // Slow-biased, because the point of a practice loop is studying a fast move.
+  const LOOP_SPEEDS = [0.1, 0.25, 0.5, 0.75, 1];
 
   // Frame stepping
   const DEFAULT_FPS = 30;
@@ -341,6 +343,8 @@
       <div class="ig-vc-wrap ig-vc-loop-wrap">
         <button type="button" class="ig-vc-btn ig-vc-loop-toggle"></button>
         <div class="ig-vc-popup"><div class="ig-vc-box ig-vc-loop-box">
+          ${LOOP_SPEEDS.map((s) => `<button type="button" class="ig-vc-opt ig-vc-loop-speed" data-loop-speed="${s}">${s}x</button>`).join('')}
+          <div class="ig-vc-loop-sep"></div>
           <button type="button" class="ig-vc-opt ig-vc-loop-in">A</button>
           <button type="button" class="ig-vc-opt ig-vc-loop-out">B</button>
           <button type="button" class="ig-vc-opt ig-vc-loop-clear">clr</button>
@@ -359,6 +363,7 @@
     const loopClearBtn = bar.querySelector('.ig-vc-loop-clear');
     const loopZoomBtn = bar.querySelector('.ig-vc-loop-zoom');
     const hintEl = bar.querySelector('.ig-vc-hint');
+    const loopSpeedOpts = bar.querySelectorAll('.ig-vc-loop-speed');
     const handleA = bar.querySelector('.ig-vc-handle-a');
     const handleB = bar.querySelector('.ig-vc-handle-b');
     const seekTrack = seekEl.querySelector('.ig-vc-track');
@@ -459,6 +464,7 @@
     let looping = false;
     let loopRafHandle = null;
     let zoomDisabled = false;
+    let preLoopRate = null;
 
     const loopRange = () => core.normalizeLoop({
       start: loopIn,
@@ -503,7 +509,9 @@
       //
       // While scrubbing, rate and mute belong to the scrub; enforcing the saved
       // preferences would cancel it instantly.
-      if (!augmenting && !scrubbing) {
+      // While scrubbing or looping, the rate and mute belong to that motion; the
+      // saved preferences would cancel it instantly.
+      if (!augmenting && !scrubbing && !looping) {
         if (Math.abs(video.volume - vol) > 0.005) video.volume = vol;
         if (!video.paused && video.muted !== Boolean(settings.muted)) video.muted = Boolean(settings.muted);
         if (Math.abs(video.playbackRate - rate) > 0.01) video.playbackRate = rate;
@@ -541,7 +549,9 @@
       loopToggleBtn.classList.toggle('active', looping);
       loopToggleBtn.classList.toggle('unavailable', !range);
       loopToggleBtn.title = range
-        ? (looping ? 'Looping — click to stop  \\' : `Loop ${formatTime(range.start)}–${formatTime(range.end)}  \\`)
+        ? (looping
+          ? `Looping at ${Number(core.clampPlaybackRate(settings.loopRate, 1))}x — click to stop  \\`
+          : `Loop ${formatTime(range.start)}–${formatTime(range.end)} at ${Number(core.clampPlaybackRate(settings.loopRate, 1))}x  \\`)
         : 'Set both A and B to enable looping';
       loopRestartBtn.innerHTML = ICONS.restart;
       loopRestartBtn.classList.toggle('unavailable', loopIn === null);
@@ -555,6 +565,11 @@
       loopZoomBtn.title = view.zoomed
         ? `Timeline zoomed to ${formatTime(view.start)}–${formatTime(view.end)} — show the whole video instead`
         : 'Zoom the timeline around a tight loop so the markers are easier to aim at';
+
+      const loopRate = core.clampPlaybackRate(settings.loopRate, 1);
+      for (const opt of loopSpeedOpts) {
+        opt.classList.toggle('active', Math.abs(Number(opt.dataset.loopSpeed) - loopRate) < 0.001);
+      }
 
       fsBtn.innerHTML = document.fullscreenElement?.contains(video) ? ICONS.minimize : ICONS.maximize;
     }
@@ -952,6 +967,10 @@
     };
 
     const startLoopWatcher = () => {
+      // A practice loop plays at its own rate, borrowed from whatever was in
+      // effect and handed back when looping stops.
+      if (preLoopRate === null) preLoopRate = video.playbackRate;
+      video.playbackRate = core.clampPlaybackRate(settings.loopRate, 1);
       if (loopRafHandle === null) loopRafHandle = requestAnimationFrame(loopTick);
     };
 
@@ -959,6 +978,13 @@
       if (loopRafHandle !== null) {
         cancelAnimationFrame(loopRafHandle);
         loopRafHandle = null;
+      }
+      if (preLoopRate !== null) {
+        // In augment mode the host site owns playback speed, so the only correct
+        // thing to restore is whatever was actually in effect beforehand.
+        const restore = augmenting ? preLoopRate : (Number(settings.playbackRate) || 1);
+        preLoopRate = null;
+        video.playbackRate = core.clampPlaybackRate(restore, 1);
       }
     };
 
@@ -1266,6 +1292,17 @@
     loopOutBtn.addEventListener('click', setLoopOut);
     loopToggleBtn.addEventListener('click', toggleLoop);
     loopToggleBtn.addEventListener('contextmenu', clearLoop);
+    for (const opt of loopSpeedOpts) {
+      opt.addEventListener('click', () => {
+        const rate = core.clampPlaybackRate(opt.dataset.loopSpeed, 1);
+        saveSettings({ loopRate: rate });
+        // Applied immediately when a loop is already running, so the menu is a
+        // live control rather than a setting for next time.
+        if (looping) video.playbackRate = rate;
+        revealBar(true);
+        sync();
+      });
+    }
     loopClearBtn.addEventListener('click', clearLoop);
     loopZoomBtn.addEventListener('click', () => {
       zoomDisabled = !zoomDisabled;
