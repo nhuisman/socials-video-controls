@@ -149,7 +149,11 @@
   background: rgba(0, 0, 0, 0.78);
   color: #fff;
   font-size: 10px;
-  white-space: nowrap;
+  line-height: 1.45;
+  /* Multi-line: marker times on the first line, the hotkey hint below. */
+  white-space: pre-line;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
   pointer-events: none;
   opacity: 0;
   transition: opacity 0.12s ease;

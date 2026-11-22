@@ -27,9 +27,14 @@
   // at individually. Unzoom only once they are much further apart, so the bar
   // does not flip back and forth around a single threshold.
   const ZOOM_MIN_GAP_PX = 190;
-  const ZOOM_UNZOOM_GAP_PX = 420;
+  // The trigger sits well below the target so each zoom buys a factor of 2.5 in
+  // span before another is needed, which keeps the number of discrete steps
+  // across a long drag small. At 20% of a 150px bar the handles are still ~30px
+  // apart, comfortably aimable for 9px handles.
+  const ZOOM_MIN_FRACTION = 0.2;
+  const ZOOM_MAX_FRACTION = 0.9;
+  const ZOOM_TARGET_FRACTION = 0.5;
   const ZOOM_MIN_WINDOW_SECONDS = 5;
-  const ZOOM_PAD_FRACTION = 0.5;
   const KEYS_LOOP_IN = new Set(['[', '{']);
   const KEYS_LOOP_OUT = new Set([']', '}']);
   const KEYS_LOOP_TOGGLE = new Set(['\\']);
@@ -477,8 +482,15 @@
     // The window the seek bar currently represents. Held as state rather than
     // derived fresh each time, so nudging a marker does not rescale the bar.
     let timelineView = null;
+    // Frozen for the duration of a drag. Without this, moving a marker changes
+    // the window, which changes the pointer-to-time mapping mid-drag, which
+    // makes the handle jump away from the pointer: a feedback loop that reads as
+    // the bar resetting and skipping around. The window is re-evaluated once on
+    // release instead.
+    let frozenView = null;
 
     const currentView = () => {
+      if (frozenView) return frozenView;
       timelineView = core.nextTimelineView({
         current: timelineView,
         loopIn,
@@ -486,12 +498,21 @@
         duration: video.duration,
         barWidthPx: seekTrack.getBoundingClientRect().width,
         minGapPx: ZOOM_MIN_GAP_PX,
-        unzoomGapPx: ZOOM_UNZOOM_GAP_PX,
+        minFraction: ZOOM_MIN_FRACTION,
+        maxFraction: ZOOM_MAX_FRACTION,
+        targetFraction: ZOOM_TARGET_FRACTION,
         minWindowSeconds: ZOOM_MIN_WINDOW_SECONDS,
-        padFraction: ZOOM_PAD_FRACTION,
         disabled: zoomDisabled
       });
       return timelineView;
+    };
+
+    const freezeView = () => {
+      frozenView = currentView();
+    };
+
+    const thawView = () => {
+      frozenView = null;
     };
 
     // End of the buffered range covering a given time, which is how far stepping
@@ -665,6 +686,7 @@
         // A drag supersedes any queued frame steps.
         pendingDelta = 0;
         intendedFrame = null;
+        freezeView();
         showHint('playhead');
         // Dragging is the most seek-heavy thing the bar does, so ask for the file.
         if (!preloadNudged) {
@@ -683,6 +705,7 @@
         }
         dragTargetTime = null;
         dragDirty = false;
+        thawView();
         showHint(null);
         if (wasPlaying) requestPlay();
         updateTime();
@@ -878,6 +901,8 @@
       dragTargetTime = clamped;
       dragDirty = true;
       timeEl.textContent = renderTime(clamped);
+      // Both marker times must track the drag, not show where they started.
+      refreshHint();
       paintLoopMarks();
       flushDragSeek();
     };
@@ -895,6 +920,7 @@
         if (wasPlaying) requestPause();
         pendingDelta = 0;
         intendedFrame = null;
+        freezeView();
         showHint(which);
         revealBar(true);
         moveTrim(e.clientX);
@@ -910,6 +936,7 @@
           trimDrag = null;
           dragTargetTime = null;
           dragDirty = false;
+          thawView();
           showHint(null);
           // Trimming while looping should resume inside the new range, not from
           // wherever the handle was dropped.
@@ -927,22 +954,35 @@
     // discoverable at the moment they are useful rather than only in the README.
     let hintMode = null;
 
-    const showHint = (mode) => {
-      hintMode = mode;
-      let text = '';
-      if (mode === 'in') text = 'dragging A';
-      else if (mode === 'out') text = 'dragging B';
-      else if (mode === 'playhead') {
-        if (loopIn === null) text = 'press  [  to set A here';
-        else if (loopOut === null) text = 'press  ]  to set B here';
-        else text = 'press  [  or  ]  to move A or B here';
-      }
-      hintEl.textContent = text;
-      hintEl.classList.toggle('visible', Boolean(text));
+    // Both marker times, always both, so the relationship between them is
+    // visible while either is moving and a lone marker still shows where it is.
+    const renderMarkers = () => {
+      const a = loopIn === null ? '—' : formatTime(loopIn, 2);
+      const b = loopOut === null ? '—' : formatTime(loopOut, 2);
+      const span = loopIn !== null && loopOut !== null
+        ? `  (${(loopOut - loopIn).toFixed(2)}s)`
+        : '';
+      return `A ${a}   B ${b}${span}`;
     };
 
-    // Setting a marker mid-drag changes which hotkey is useful next, so the hint
-    // is re-rendered rather than left showing a stale instruction.
+    const showHint = (mode) => {
+      hintMode = mode;
+      const lines = [];
+      // Marker times lead, since they are what the eye needs while trimming.
+      if (loopIn !== null || loopOut !== null) lines.push(renderMarkers());
+      if (mode === 'in') lines.push('moving A');
+      else if (mode === 'out') lines.push('moving B');
+      else if (mode === 'playhead') {
+        if (loopIn === null) lines.push('press  [  to set A here');
+        else if (loopOut === null) lines.push('press  ]  to set B here');
+        else lines.push('press  [  or  ]  to move A or B here');
+      }
+      hintEl.textContent = lines.join('\n');
+      hintEl.classList.toggle('visible', lines.length > 0);
+    };
+
+    // Setting a marker mid-drag changes both the times shown and which hotkey is
+    // useful next, so the hint is re-rendered rather than left stale.
     const refreshHint = () => showHint(hintMode);
 
     // While dragging, a marker belongs at the pointer, not at the video's
@@ -1046,6 +1086,7 @@
       looping = false;
       stopLoopWatcher();
       revealBar(true);
+      refreshHint();
       sync();
       updateTime();
       return true;

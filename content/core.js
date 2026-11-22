@@ -119,14 +119,16 @@
   // The slice of the video the seek bar should represent, as a transition from
   // the window currently in use rather than a fresh calculation each time.
   //
-  // Stickiness is the point. Recomputing on every marker nudge made the bar
-  // rescale constantly, which is disorienting while aiming at a handle. Once a
-  // window is established it is kept as long as the markers still sit inside it
-  // and the loop has not grown large enough to need the whole video back.
+  // Stickiness is the point. The window changes only when it stops working:
+  // when a marker falls outside it, when the loop has become too small a share
+  // of it to aim at, or when the loop has grown large enough that zooming is
+  // pointless. Anything else holds the current window.
   //
-  // The decision to zoom is made in pixels, not as a fraction of duration,
-  // because what matters is whether the two handles are far enough apart on
-  // screen to aim at individually.
+  // The thresholds are fractions of the bar, not absolute pixels, because an
+  // absolute target can exceed the bar's own width — a 190px goal on a 150px
+  // bar can never be met, which makes "needs more zoom" true forever and
+  // rescales the bar on every pointer move. minGapPx only suppresses zooming on
+  // a bar wide enough that the gap is already comfortable in absolute terms.
   core.nextTimelineView = ({
     current,
     loopIn,
@@ -134,9 +136,10 @@
     duration,
     barWidthPx,
     minGapPx = 190,
-    unzoomGapPx = 420,
+    minFraction = 1 / 3,
+    maxFraction = 0.9,
+    targetFraction = 0.5,
     minWindowSeconds = 5,
-    padFraction = 0.5,
     disabled = false
   }) => {
     const full = { start: 0, end: Number.isFinite(duration) && duration > 0 ? duration : 0, zoomed: false };
@@ -151,22 +154,32 @@
     const span = b - a;
     if (span <= 0) return full;
 
-    const gapAt = (windowWidth) => (windowWidth > 0 ? (span / windowWidth) * barWidthPx : 0);
+    const fractionOf = (windowWidth) => (windowWidth > 0 ? span / windowWidth : 0);
+    // Zoom in only when the loop is both a small share of the bar and narrow in
+    // absolute terms, so a very wide bar is left alone.
+    const wantsMoreZoom = (windowWidth) => {
+      const fraction = fractionOf(windowWidth);
+      return fraction < minFraction && fraction * barWidthPx < minGapPx;
+    };
 
-    // Keep the established window while it still works.
-    if (current && current.zoomed && current.end > current.start) {
+    if (current && current.end > current.start) {
       const insideWindow = a >= current.start && b <= current.end;
-      const gap = gapAt(current.end - current.start);
-      if (insideWindow && gap <= unzoomGapPx) return current;
-      if (gap > unzoomGapPx) return full;
-    } else if (gapAt(duration) >= minGapPx) {
-      // Already far enough apart on screen at full scale; nothing to fix.
+      if (insideWindow) {
+        const windowWidth = current.end - current.start;
+        // The loop now fills the window, so the zoom is doing nothing.
+        if (fractionOf(windowWidth) > maxFraction) return full;
+        // Already comfortable, or as far in as the zoom cap allows: hold it.
+        const atZoomCap = windowWidth <= minWindowSeconds + 1e-9;
+        if (!wantsMoreZoom(windowWidth) || atZoomCap) return current;
+      }
+    } else if (!wantsMoreZoom(duration)) {
       return full;
     }
 
-    // Centring on the loop keeps the window stable as a marker moves, and the
-    // minimum width caps how far in the bar will ever zoom.
-    const width = Math.min(duration, Math.max(span * (1 + 2 * padFraction), minWindowSeconds));
+    // Size the window so the loop occupies targetFraction of it, which lands
+    // comfortably above minFraction and so settles rather than zooming again.
+    // minWindowSeconds caps how far in the bar will ever go.
+    const width = Math.min(duration, Math.max(span / targetFraction, minWindowSeconds));
     const middle = (a + b) / 2;
     let start = middle - width / 2;
     let end = start + width;
