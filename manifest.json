@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Socials Video Controls",
-  "version": "1.6.0",
-  "description": "Video control bar for Instagram, plus arrow-key frame stepping and jog scrubbing on Instagram and Facebook.",
+  "version": "1.7.0",
+  "description": "Frame-accurate video navigation and A-B loop practice for Instagram and Facebook, plus a full control bar on Instagram.",
   "permissions": [
     "storage",
     "scripting"

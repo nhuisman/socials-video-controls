@@ -116,6 +116,31 @@
     return null;
   };
 
+  // Normalises a loop range. Markers can be set in either order, so these are
+  // sorted rather than rejected, and clamped to the media. A range shorter than
+  // minFrames is returned as null: looping over one or two frames thrashes the
+  // decoder and shows nothing useful.
+  core.normalizeLoop = ({ start, end, duration, fps, minFrames = 3 }) => {
+    if (!Number.isFinite(duration) || duration <= 0) return null;
+    if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
+    if (!Number.isFinite(fps) || fps <= 0) return null;
+    const a = Math.max(0, Math.min(Math.min(start, end), duration));
+    const b = Math.max(0, Math.min(Math.max(start, end), duration));
+    // Compared in frames with a tolerance, because float error makes an exactly
+    // minFrames-long span measure a hair short: 5 + 3/30 - 5 is 0.0999...,
+    // which would silently refuse a loop the user legitimately marked.
+    if ((b - a) * fps < minFrames - 1e-6) return null;
+    return { start: a, end: b };
+  };
+
+  // Whether a playing video has reached the end of its loop. The epsilon lands
+  // the restart a touch early rather than overshooting past the out point, which
+  // would show a frame the user excluded.
+  core.loopShouldRestart = ({ currentTime, loopEnd, paused, epsilon = 0.015 }) => {
+    if (paused || !Number.isFinite(currentTime) || !Number.isFinite(loopEnd)) return false;
+    return currentTime >= loopEnd - epsilon;
+  };
+
   // Whether a slider's aria-valuetext looks like a media position ("0:44 of
   // 1:45"), which is how a progress slider is told apart from a volume one
   // without depending on a localised aria-label. The timestamp format is

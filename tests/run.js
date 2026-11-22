@@ -636,6 +636,65 @@ group('site resolution', () => {
   });
 });
 
+group('A-B loop', () => {
+  test('sorts markers so they can be set in either order', () => {
+    const a = core.normalizeLoop({ start: 8, end: 3, duration: 20, fps: 30 });
+    equal(a.start, 3, 'start');
+    equal(a.end, 8, 'end');
+    note('marking the end before the start still produces a valid range');
+  });
+
+  test('clamps a range to the media', () => {
+    const r = core.normalizeLoop({ start: -5, end: 99, duration: 20, fps: 30 });
+    equal(r.start, 0);
+    equal(r.end, 20);
+  });
+
+  test('refuses a range too short to be worth looping', () => {
+    equal(core.normalizeLoop({ start: 5, end: 5, duration: 20, fps: 30 }), null, 'zero length');
+    equal(core.normalizeLoop({ start: 5, end: 5 + 1 / 30, duration: 20, fps: 30 }), null, 'one frame');
+    equal(core.normalizeLoop({ start: 5, end: 5 + 2 / 30, duration: 20, fps: 30 }), null, 'two frames');
+    assert(core.normalizeLoop({ start: 5, end: 5 + 3 / 30, duration: 20, fps: 30 }), 'three frames is enough');
+    note('looping one or two frames thrashes the decoder and shows nothing useful');
+  });
+
+  test('scales the minimum with the frame rate', () => {
+    assert(core.normalizeLoop({ start: 1, end: 1.04, duration: 20, fps: 120 }), '120fps allows a shorter span');
+    equal(core.normalizeLoop({ start: 1, end: 1.02, duration: 20, fps: 24 }), null, '24fps needs a longer one');
+  });
+
+  test('accepts a span of exactly the minimum frame count', () => {
+    for (const fps of [23.976, 24, 25, 29.97, 30, 59.94, 60]) {
+      const start = 5;
+      const end = start + 3 / fps;
+      assert(core.normalizeLoop({ start, end, duration: 20, fps }), `fps=${fps} rejected an exact 3-frame span`);
+    }
+    note('float error makes an exact N-frame span measure a hair short; compared in frames with a tolerance');
+  });
+
+  test('refuses an unusable video or frame rate', () => {
+    equal(core.normalizeLoop({ start: 1, end: 5, duration: NaN, fps: 30 }), null, 'duration not known yet');
+    equal(core.normalizeLoop({ start: 1, end: 5, duration: 0, fps: 30 }), null, 'zero duration');
+    equal(core.normalizeLoop({ start: 1, end: 5, duration: 20, fps: 0 }), null, 'no frame rate');
+    equal(core.normalizeLoop({ start: null, end: 5, duration: 20, fps: 30 }), null, 'marker unset');
+    equal(core.normalizeLoop({ start: 1, end: null, duration: 20, fps: 30 }), null, 'marker unset');
+  });
+
+  test('restarts on reaching the out point, slightly early', () => {
+    assert(core.loopShouldRestart({ currentTime: 10, loopEnd: 10, paused: false }), 'at the out point');
+    assert(core.loopShouldRestart({ currentTime: 9.99, loopEnd: 10, paused: false }), 'a hair before it');
+    assert(core.loopShouldRestart({ currentTime: 12, loopEnd: 10, paused: false }), 'past it');
+    note('landing early avoids showing a frame the user excluded');
+  });
+
+  test('does not restart before the out point or while paused', () => {
+    assert(!core.loopShouldRestart({ currentTime: 5, loopEnd: 10, paused: false }), 'mid-loop');
+    assert(!core.loopShouldRestart({ currentTime: 10, loopEnd: 10, paused: true }), 'paused at the out point');
+    assert(!core.loopShouldRestart({ currentTime: NaN, loopEnd: 10, paused: false }), 'unknown position');
+    assert(!core.loopShouldRestart({ currentTime: 10, loopEnd: NaN, paused: false }), 'no out point');
+  });
+});
+
 //#region Summary
 
 console.log('');

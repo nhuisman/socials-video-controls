@@ -18,6 +18,14 @@
   const FPS_MAX_SAMPLES = 24;
   const KEYBOARD_REVEAL_MS = 4000;
   const SEEK_STALL_MS = 1000;
+
+  // A-B loop, for practising a single move
+  const LOOP_MIN_FRAMES = 3;
+  const KEYS_LOOP_IN = new Set(['[', '{']);
+  const KEYS_LOOP_OUT = new Set([']', '}']);
+  const KEYS_LOOP_TOGGLE = new Set(['\\']);
+  const KEYS_LOOP_RESTART = new Set(['Home']);
+  const KEYS_LOOP_CLEAR = new Set(['|']);
   const SHIFT_FRAME_MULTIPLIER = 10;
   const KEYS_FRAME_BACK = new Set(['ArrowLeft']);
   const KEYS_FRAME_FORWARD = new Set(['ArrowRight']);
@@ -53,7 +61,9 @@
     minimize: svg(`<path d="M8 3v3a2 2 0 0 1-2 2H3"/><path d="M21 8h-3a2 2 0 0 1-2-2V3"/><path d="M3 16h3a2 2 0 0 1 2 2v3"/><path d="M16 21v-3a2 2 0 0 1 2-2h3"/>`),
     // Original thin-stroke glyphs for the cache control, drawn to match the set above
     download: svg(`<path d="M12 4v11"/><path d="m7 12 5 5 5-5"/><path d="M5 20h14"/>`),
-    cached: svg(`<path d="m6 11 4 4 8-9"/><path d="M5 20h14"/>`)
+    cached: svg(`<path d="m6 11 4 4 8-9"/><path d="M5 20h14"/>`),
+    loop: svg(`<path d="M3 11V9a4 4 0 0 1 4-4h11"/><path d="m15 2 3 3-3 3"/><path d="M21 13v2a4 4 0 0 1-4 4H6"/><path d="m9 22-3-3 3-3"/>`),
+    restart: svg(`<path d="M6 5v14"/><path d="M20 5 9 12l11 7z"/>`)
   };
 
   let settings = { ...DEFAULT_SETTINGS };
@@ -308,7 +318,7 @@
     bar.innerHTML = `
       <button type="button" class="ig-vc-btn ig-vc-play"></button>
       <span class="ig-vc-time">0:00 / 0:00</span>
-      <div class="ig-vc-seek"><div class="ig-vc-track"><div class="ig-vc-buffer"></div><div class="ig-vc-fill"></div></div></div>
+      <div class="ig-vc-seek"><div class="ig-vc-track"><div class="ig-vc-buffer"></div><div class="ig-vc-loop-span"></div><div class="ig-vc-fill"></div></div></div>
       <div class="ig-vc-wrap">
         <button type="button" class="ig-vc-btn ig-vc-mute"></button>
         <div class="ig-vc-popup"><div class="ig-vc-box">
@@ -321,12 +331,19 @@
           ${SPEEDS.map((s) => `<button type="button" class="ig-vc-opt" data-speed="${s}">${s}x</button>`).join('')}
         </div></div>
       </div>
+      <div class="ig-vc-loop">
+        <button type="button" class="ig-vc-btn ig-vc-loop-in">A</button>
+        <button type="button" class="ig-vc-btn ig-vc-loop-out">B</button>
+        <button type="button" class="ig-vc-btn ig-vc-loop-toggle"></button>
+        <button type="button" class="ig-vc-btn ig-vc-loop-restart"></button>
+      </div>
       <button type="button" class="ig-vc-btn ig-vc-cache"></button>
       <button type="button" class="ig-vc-btn ig-vc-fs"></button>
     `;
 
-    const [playBtn, timeEl, seekEl, muteBtn, volEl, speedBtn, cacheBtn, fsBtn] = [
-      '.ig-vc-play', '.ig-vc-time', '.ig-vc-seek', '.ig-vc-mute', '.ig-vc-vol', '.ig-vc-speed-btn', '.ig-vc-cache', '.ig-vc-fs'
+    const [playBtn, timeEl, seekEl, muteBtn, volEl, speedBtn, loopInBtn, loopOutBtn, loopToggleBtn, loopRestartBtn, cacheBtn, fsBtn] = [
+      '.ig-vc-play', '.ig-vc-time', '.ig-vc-seek', '.ig-vc-mute', '.ig-vc-vol', '.ig-vc-speed-btn',
+      '.ig-vc-loop-in', '.ig-vc-loop-out', '.ig-vc-loop-toggle', '.ig-vc-loop-restart', '.ig-vc-cache', '.ig-vc-fs'
     ].map((sel) => bar.querySelector(sel));
     const speedOpts = bar.querySelectorAll('.ig-vc-opt');
 
@@ -389,8 +406,49 @@
     let scrubRafHandle = null;
     let scrubLastTick = 0;
     let scrubAccumulator = 0;
-    let preScrubMuted = false;
     let preScrubRate = 1;
+
+    // Keyboard navigation is silent. Stepping and jog scrubbing both move the
+    // video in ways that make audio useless or unpleasant (a half-speed
+    // soundtrack, or a frame's worth of a sample), so the first keyboard move
+    // mutes and it stays muted until playback is deliberately resumed.
+    let keyboardMuted = false;
+    let preKeyboardMuted = false;
+
+    const enterKeyboardSilence = () => {
+      if (!keyboardMuted) {
+        keyboardMuted = true;
+        preKeyboardMuted = video.muted;
+      }
+      // Re-asserted on every keyboard move, not just the first. The host site or
+      // the user can unmute in between, and a jog scrub that then plays with the
+      // sound on is exactly what this exists to prevent.
+      video.muted = true;
+    };
+
+    // Restoring on an actual play covers every way playback can resume: Space,
+    // our own play button, and the host site's.
+    const exitKeyboardSilence = () => {
+      if (!keyboardMuted) return;
+      keyboardMuted = false;
+      video.muted = preKeyboardMuted;
+    };
+
+    // A-B loop. Markers are held in seconds and snapped to frame centres when
+    // set, so they line up with the frame-stepping grid and can be nudged by
+    // stepping to the right frame and setting the marker again.
+    let loopIn = null;
+    let loopOut = null;
+    let looping = false;
+    let loopRafHandle = null;
+
+    const loopRange = () => core.normalizeLoop({
+      start: loopIn,
+      end: loopOut,
+      duration: video.duration,
+      fps: frameClock.fps,
+      minFrames: LOOP_MIN_FRAMES
+    });
 
     // End of the buffered range covering a given time, which is how far stepping
     // can go without touching the network.
@@ -432,6 +490,27 @@
       cacheBtn.classList.toggle('unavailable', cacheState === 'unsupported' || cacheState === 'error');
       cacheBtn.title = CACHE_TITLES[cacheState] || CACHE_TITLES.idle;
 
+      const range = loopRange();
+      loopInBtn.classList.toggle('active', loopIn !== null);
+      loopOutBtn.classList.toggle('active', loopOut !== null);
+      loopInBtn.title = loopIn === null
+        ? 'Set loop start at the current frame  [ '
+        : `Loop start ${formatTime(loopIn, 2)} — press [ again to move it`;
+      loopOutBtn.title = loopOut === null
+        ? 'Set loop end at the current frame  ] '
+        : `Loop end ${formatTime(loopOut, 2)} — press ] again to move it`;
+      loopToggleBtn.innerHTML = ICONS.loop;
+      loopToggleBtn.classList.toggle('active', looping);
+      loopToggleBtn.classList.toggle('unavailable', !range);
+      loopToggleBtn.title = range
+        ? (looping ? 'Looping — click to stop  \\' : `Loop ${formatTime(range.start)}–${formatTime(range.end)}  \\`)
+        : 'Set both A and B to enable looping';
+      loopRestartBtn.innerHTML = ICONS.restart;
+      loopRestartBtn.classList.toggle('unavailable', loopIn === null);
+      loopRestartBtn.title = loopIn === null
+        ? 'Set A first, then this jumps back to it'
+        : `Jump back to ${formatTime(loopIn, 2)}  Home`;
+
       fsBtn.innerHTML = document.fullscreenElement?.contains(video) ? ICONS.minimize : ICONS.maximize;
     }
 
@@ -469,6 +548,13 @@
     const updateTime = () => {
       if (!Number.isFinite(video.duration) || video.duration <= 0) return;
       seekEl.style.setProperty('--b', `${((bufferedEndNear(video.currentTime) / video.duration) * 100).toFixed(1)}%`);
+      // Paint the loop span on the seek bar so the marked segment is visible.
+      const range = loopRange();
+      const markA = range ? range.start : loopIn;
+      const markB = range ? range.end : loopOut;
+      seekEl.style.setProperty('--la', `${(((markA ?? 0) / video.duration) * 100).toFixed(1)}%`);
+      seekEl.style.setProperty('--lb', `${(((markB ?? 0) / video.duration) * 100).toFixed(1)}%`);
+      seekEl.classList.toggle('has-loop', Boolean(range));
       // Mid-drag the pointer owns the fill and the readout, so leave both alone;
       // overwriting them here would snap the bar back to the lagging decoder.
       if (dragTargetTime !== null) return;
@@ -578,6 +664,7 @@
       ac.abort();
       frameClock.stop();
       clearTimeout(revealTimer);
+      stopLoopWatcher();
       pendingDelta = 0;
       seekInFlight = false;
       intendedFrame = null;
@@ -662,6 +749,7 @@
     const stepFrames = (delta) => {
       if (!Number.isFinite(video.duration) || video.duration <= 0) return false;
       if (!video.paused) requestPause();
+      enterKeyboardSilence();
       // Ask for the whole file once the user starts stepping, so a held key walks
       // through buffered data instead of waiting on a range request per frame.
       // No-op for Instagram's MSE-backed players, which buffer on their own terms.
@@ -680,6 +768,93 @@
       if (video.paused) requestPlay();
       else requestPause();
       revealBar(false);
+      return true;
+    };
+
+    // Restarting is paced like any other seek, so a tight loop cannot thrash the
+    // decoder by issuing a new seek before the last one landed.
+    const loopTick = () => {
+      loopRafHandle = null;
+      if (!looping) return;
+      const range = loopRange();
+      if (range && !seekBlocked()
+          && core.loopShouldRestart({ currentTime: video.currentTime, loopEnd: range.end, paused: video.paused })) {
+        intendedFrame = null;
+        pendingDelta = 0;
+        beginSeek(range.start);
+      }
+      loopRafHandle = requestAnimationFrame(loopTick);
+    };
+
+    const startLoopWatcher = () => {
+      if (loopRafHandle === null) loopRafHandle = requestAnimationFrame(loopTick);
+    };
+
+    const stopLoopWatcher = () => {
+      if (loopRafHandle !== null) {
+        cancelAnimationFrame(loopRafHandle);
+        loopRafHandle = null;
+      }
+    };
+
+    // Markers snap to the current frame's centre so they sit on the same grid the
+    // arrow keys step along. Set either one at any time, in any order, while
+    // playing or paused — refine by stepping to the frame you want and setting
+    // it again.
+    const setLoopIn = () => {
+      if (!Number.isFinite(video.duration) || video.duration <= 0) return false;
+      loopIn = core.frameCenter(currentFrameIndex(), frameClock.fps);
+      if (loopOut !== null && loopOut <= loopIn) loopOut = null;
+      revealBar(true);
+      sync();
+      return true;
+    };
+
+    const setLoopOut = () => {
+      if (!Number.isFinite(video.duration) || video.duration <= 0) return false;
+      loopOut = core.frameCenter(currentFrameIndex(), frameClock.fps);
+      if (loopIn !== null && loopIn >= loopOut) loopIn = null;
+      // Marking the end of a move is the natural moment to start practising it.
+      if (loopIn !== null && loopRange()) {
+        looping = true;
+        startLoopWatcher();
+      }
+      revealBar(true);
+      sync();
+      return true;
+    };
+
+    const toggleLoop = () => {
+      if (!loopRange()) {
+        revealBar(true);
+        sync();
+        return false;
+      }
+      looping = !looping;
+      if (looping) startLoopWatcher();
+      else stopLoopWatcher();
+      revealBar(true);
+      sync();
+      return true;
+    };
+
+    const restartLoop = () => {
+      if (loopIn === null || !Number.isFinite(video.duration) || video.duration <= 0) return false;
+      intendedFrame = null;
+      pendingDelta = 0;
+      beginSeek(loopIn);
+      revealBar(true);
+      return true;
+    };
+
+    const clearLoop = () => {
+      loopIn = null;
+      loopOut = null;
+      looping = false;
+      stopLoopWatcher();
+      revealBar(true);
+      sync();
+      updateTime();
       return true;
     };
 
@@ -721,14 +896,13 @@
       // Remember what the scrub is about to borrow. In augment mode the saved
       // preferences are not authoritative — the host site's controls are — so the
       // only correct thing to restore is whatever was actually in effect.
-      preScrubMuted = video.muted;
       preScrubRate = video.playbackRate;
       revealBar(true);
       if (direction > 0) {
         // Forward motion hands the work back to the decoder's normal playback
         // path. No seeking at all, frames presented on schedule: the only way to
         // get genuinely smooth output. Audio at a scrub rate is just noise.
-        video.muted = true;
+        enterKeyboardSilence();
         video.playbackRate = scrubRate;
         video.play().catch(() => {});
       } else {
@@ -749,13 +923,9 @@
       scrubDirection = 0;
       // currentTime is left wherever playback stopped; frame indices derive from
       // it, so a following tap is still exact without a corrective seek.
-      if (augmenting) {
-        video.playbackRate = preScrubRate;
-        video.muted = preScrubMuted;
-      } else {
-        video.playbackRate = Number(settings.playbackRate) || 1;
-        video.muted = Boolean(settings.muted);
-      }
+      // Mute is deliberately NOT restored here — keyboard navigation stays
+      // silent until playback is actually resumed.
+      video.playbackRate = augmenting ? preScrubRate : (Number(settings.playbackRate) || 1);
       revealBar(true);
       sync();
     };
@@ -925,6 +1095,11 @@
     });
     for (const opt of speedOpts) opt.addEventListener('click', () => saveSettings({ playbackRate: Number(opt.dataset.speed) }));
     speedBtn.addEventListener('contextmenu', () => saveSettings({ playbackRate: 1 }));
+    loopInBtn.addEventListener('click', setLoopIn);
+    loopOutBtn.addEventListener('click', setLoopOut);
+    loopToggleBtn.addEventListener('click', toggleLoop);
+    loopToggleBtn.addEventListener('contextmenu', clearLoop);
+    loopRestartBtn.addEventListener('click', restartLoop);
     cacheBtn.addEventListener('click', () => {
       if (cacheState === 'loading') {
         cacheAbort?.abort();
@@ -944,6 +1119,13 @@
     for (const evt of ['play', 'playing', 'pause', 'volumechange', 'ratechange']) {
       video.addEventListener(evt, sync, { signal });
     }
+    // Any genuine resume ends keyboard silence. The scrub's own play() is
+    // excluded, since that motion is exactly what should stay quiet.
+    for (const evt of ['play', 'playing']) {
+      video.addEventListener(evt, () => {
+        if (!scrubbing) exitKeyboardSilence();
+      }, { signal });
+    }
     video.addEventListener('loadedmetadata', () => {
       frameClock.reset();
       intendedFrame = null;
@@ -952,6 +1134,13 @@
       dragTargetTime = null;
       dragDirty = false;
       preloadNudged = false;
+      // Loop markers belong to the video that was playing, not to a recycled
+      // element showing something else.
+      loopIn = null;
+      loopOut = null;
+      looping = false;
+      stopLoopWatcher();
+      keyboardMuted = false;
       // Instagram recycles <video> elements, so if our blob is no longer the source
       // the element has been reclaimed and the cache belongs to a different video.
       if (cacheBlobUrl && video.currentSrc !== cacheBlobUrl) {
@@ -984,7 +1173,11 @@
     sync();
     updateTime();
 
-    controllers.set(video, { mount, sync, destroy, stepFrames, togglePlay, beginScrub, endScrub, container: () => currentContainer });
+    controllers.set(video, {
+      mount, sync, destroy, stepFrames, togglePlay, beginScrub, endScrub,
+      setLoopIn, setLoopOut, toggleLoop, restartLoop, clearLoop,
+      container: () => currentContainer
+    });
   }
 
   let fsIdleTimer = null;
@@ -1083,7 +1276,13 @@
     const space = e.key === ' ' || e.code === 'Space';
     const back = KEYS_FRAME_BACK.has(e.key);
     const forward = KEYS_FRAME_FORWARD.has(e.key);
-    if (!space && !back && !forward) return;
+    const loopIn = KEYS_LOOP_IN.has(e.key);
+    const loopOut = KEYS_LOOP_OUT.has(e.key);
+    const loopToggle = KEYS_LOOP_TOGGLE.has(e.key);
+    const loopRestart = KEYS_LOOP_RESTART.has(e.key);
+    const loopClear = KEYS_LOOP_CLEAR.has(e.key);
+    const isLoopKey = loopIn || loopOut || loopToggle || loopRestart || loopClear;
+    if (!space && !back && !forward && !isLoopKey) return;
     if (isTypingContext(e.target) || isTypingContext(document.activeElement)) return;
     const video = resolveActiveVideo();
     const ctrl = controllers.get(video);
@@ -1092,6 +1291,21 @@
     if (space) {
       stopHold();
       ctrl.togglePlay();
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+
+    // Loop keys act once per press; holding one repeats harmlessly but is not
+    // motion, so repeats are simply swallowed along with the key.
+    if (isLoopKey) {
+      if (!e.repeat) {
+        if (loopIn) ctrl.setLoopIn();
+        else if (loopOut) ctrl.setLoopOut();
+        else if (loopToggle) ctrl.toggleLoop();
+        else if (loopRestart) ctrl.restartLoop();
+        else ctrl.clearLoop();
+      }
       e.preventDefault();
       e.stopPropagation();
       return;

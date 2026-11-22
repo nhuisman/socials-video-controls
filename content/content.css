@@ -87,25 +87,80 @@
 }
 
 /* Augment mode (Facebook): the site already has a full player, so everything
-   except the frame readout is suppressed and the remainder sits top-left, clear
-   of the native controls along the bottom edge. */
+   except the frame readout and the loop controls is suppressed. Looping is the
+   point of the tool on a dance video, so it stays available on both sites. */
 .ig-vc-bar.ig-vc-augment {
   inset: 0 auto auto 0;
   height: auto;
   width: auto;
   padding: 4px 7px;
-  gap: 0;
+  gap: 6px;
   border-radius: 0 0 6px 0;
   background: rgba(0, 0, 0, 0.55);
   transform: translateY(-100%);
 }
 
-.ig-vc-bar.ig-vc-augment > :not(.ig-vc-time) {
+.ig-vc-bar.ig-vc-augment > :not(.ig-vc-time, .ig-vc-loop) {
   display: none !important;
 }
 
 .ig-vc-player:is(:hover:not(:fullscreen.idle), .dragging, .ig-vc-kb) .ig-vc-bar.ig-vc-augment {
   transform: translateY(0);
+}
+
+/* A-B loop span, drawn above the buffered range and below the playback fill */
+.ig-vc-seek.has-loop .ig-vc-loop-span {
+  display: block;
+}
+
+.ig-vc-loop-span {
+  display: none;
+  position: absolute;
+  bottom: 0;
+  left: var(--la, 0%);
+  width: max(2px, calc(var(--lb, 0%) - var(--la, 0%)));
+  height: 100%;
+  background: rgba(120, 200, 255, 0.55);
+  border-radius: 99px;
+}
+
+/* Loop controls, grouped so augment mode can keep them while hiding the rest */
+.ig-vc-loop {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.ig-vc-loop-in,
+.ig-vc-loop-out {
+  width: 15px;
+  font-size: 10px;
+  font-weight: 600;
+  text-align: center;
+  opacity: 0.7;
+  text-box: trim-both cap alphabetic;
+}
+
+.ig-vc-loop-in.active,
+.ig-vc-loop-out.active {
+  opacity: 1;
+  color: rgb(120, 200, 255);
+}
+
+.ig-vc-loop-toggle,
+.ig-vc-loop-restart {
+  width: 20px;
+}
+
+.ig-vc-loop-toggle.active {
+  opacity: 1;
+  color: rgb(120, 200, 255);
+}
+
+.ig-vc-loop-toggle.unavailable,
+.ig-vc-loop-restart.unavailable {
+  opacity: 0.35;
 }
 
 /* Buttons & thin Lucide icons */

@@ -56,8 +56,15 @@ A browser extension that adds video playback controls to Instagram and frame-acc
 | `←` / `→` hold | Smooth jog scrub at half speed |
 | `Shift` + hold | Smooth jog scrub at double speed |
 | `Space` | Play / pause |
+| `[` | Set loop start (A) at the current frame |
+| `]` | Set loop end (B) at the current frame |
+| `\` | Toggle looping |
+| `Home` | Jump back to A |
+| `\|` | Clear both markers |
 
 A tap and a hold do deliberately different things. A tap issues one precise seek and lands on an exact frame. Holding past a short threshold switches to continuous motion, then releasing stops it; the frame you land on is still exact, so you can tap to fine-tune straight afterwards.
+
+**Keyboard navigation is silent.** The first keyboard move mutes the video and it stays muted until playback is deliberately resumed — with `Space`, the play button, or the host site's own. A half-speed soundtrack during a jog scrub is noise, and a single frame's worth of audio is a click. Muting is re-asserted on every keyboard move rather than only the first, since the site or you may unmute in between.
 
 While the keyboard is in use the control bar surfaces on its own and the readout switches to a precise form showing the frame index, for example `0:04.53 / 0:12 · f136`.
 
@@ -158,6 +165,31 @@ Verified against a live Reel rather than assumed:
 - **The whole-video cache does not apply.** Facebook streams through Media Source Extensions, so there is no fetchable file behind the player.
 - **Frame stepping, jog scrubbing and frame-rate detection all work.** Seeks land and hold, Facebook does not fight `currentTime`, `playbackRate` sticks, and the frame rate measured off a real Reel came out at 30.0003 fps, snapping correctly to 30.
 - **Facebook sometimes re-pauses a video it did not start.** A bare `play()` with the extension uninvolved behaves identically, so this is their player's behaviour rather than an extension bug. It can make `Space` appear not to resume.
+
+---
+
+## Practising a Move (A–B Loop)
+
+The workflow this was built for: watch a dance video, find a move, bracket it, and loop it until you have it.
+
+1. Play until just before the move, then press `[` to set the start.
+2. Let it run past the end of the move and press `]`. **Looping starts immediately** — marking the end of a move is the moment you want to begin practising it.
+3. Refine with the arrow keys. Step to the exact frame you want and press `[` or `]` again to move that marker.
+4. Press `Home` at any time to jump back to the start, whether or not looping is on.
+5. `\` stops and starts looping; `|` clears both markers.
+
+The same four controls are on the bar: `A`, `B`, a loop toggle, and a jump-back-to-A button. Right-clicking the loop toggle clears the markers. They are available on Facebook too, where the rest of the bar is hidden, because looping is the point of the tool on a dance video.
+
+The marked segment is painted on the seek bar, so you can see the span you are working on.
+
+### Notes on the design
+
+- **Markers are deliberately soft.** Set them roughly while the video plays, then refine by frame-stepping and re-pressing. There is no separate edit mode, and no need to be precise the first time. Each marker snaps to the centre of the current frame, so it sits on the same grid the arrow keys step along.
+- **Order does not matter.** Mark the end before the start if that is how you spotted it; the range sorts itself.
+- **Very short loops are refused.** A range under three frames thrashes the decoder and shows nothing useful, so the loop toggle stays disabled until the span is worth playing.
+- **Restarts are paced** through the same single-seek-in-flight path as everything else, so a tight loop cannot issue a new seek before the last one landed.
+- **Slow it down.** On Instagram, combine the loop with the speed control (`0.5x` or `0.25x`) to study a fast move. On Facebook, use their own speed control — the extension does not touch playback speed there.
+- Markers belong to the video. They clear when the player loads something else, since Instagram and Facebook both recycle `<video>` elements between posts.
 
 ---
 
