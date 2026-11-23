@@ -250,7 +250,7 @@ The workflow this was built for: watch a dance video, find a move, bracket it, a
 3. Refine with the arrow keys. Step to the exact frame you want and press `[` or `]` again to move that marker.
 4. Press `Home` at any time to jump back to the start, whether or not looping is on.
 5. `\` stops and starts looping; `|` clears both markers.
-6. Pick a **loop speed** from the menu on the loop button — `0.1x`, `0.25x`, `0.5x`, `0.75x` or `1x`. Studying a fast move at a quarter speed is the point of the whole feature. Choosing a speed starts the loop if it was stopped, since picking a practice speed means you want to hear it.
+6. Slow it down with the **speed** control — `0.1x` through `2x`. Studying a fast move at a quarter speed is the point of the whole feature.
 7. Press the **link** button on the bar to copy a URL that opens the video at this loop, at this speed. Open that URL later, or send it to someone, and the video opens on the move with the markers already placed. The button appears once both markers are set.
 
 ### Sharing a loop by link
@@ -275,19 +275,19 @@ Facebook's stripping turned out to apply only to the fragment it finds **on load
 
 The **link** button is still the route when you want the URL on the clipboard rather than in the address bar. If the clipboard refuses — it needs a trusted click and a focused document — the link appears in the button's tooltip instead so it is never lost.
 
-### Loop speed
+### Speed
 
-The loop button carries a menu: speeds above a divider, the loop actions below it.
+One speed control, on the bar: `0.1x`, `0.25x`, `0.5x`, `0.75x`, `1x`, `1.25x`, `1.5x`, `2x`. It applies whether or not a loop is running, and a loop plays at whatever it is set to.
 
-Loop speed is deliberately **separate from the general playback speed**, so you can watch a video at normal speed and practise a bracketed move at `0.25x` without changing one to adjust the other. The loop borrows the rate when looping starts and hands it back when looping stops, and the speed you pick is remembered for the next loop.
+It used to be two. The loop button carried its own slow-biased menu — `0.1x` to `1x` — and the loop borrowed that rate while it ran, handing the general rate back when looping stopped. Two speed menus one click apart in the same bar is a worse problem than the one that arrangement solved, so they were merged and the slow end moved onto the bar's control, since `0.1x` and `0.25x` were previously reachable only inside the loop menu and are the two that matter most on a fast move.
 
-Changing the speed while a loop is running applies immediately, so the menu is a live control rather than a setting for next time. The rate is clamped to what browsers accept — assigning one outside that range throws and would otherwise take the player down.
+What that trades away: the automatic revert. Before, you could watch at `1x`, loop at `0.25x`, and stop looping to get `1x` back. Now the speed is just the speed, and stopping the loop leaves it where you put it. Changing it is one click.
 
-On Facebook this is the one case where the extension does set playback speed, which it otherwise leaves alone: a loop speed is a deliberate request rather than a background assertion, and the previous rate is restored when looping ends.
+The rate is clamped to what browsers accept — assigning one outside that range throws and would otherwise take the player down.
 
 If you used the arrow keys to find the move, keyboard navigation will have muted the video. Press `Space` to play the loop and the sound comes back with it, which matters when the music is the point.
 
-The same controls are on the bar: a loop toggle that carries the state, a jump-back-to-A button, and a popup on the toggle holding `A`, `B`, `clr` and the zoom switch. Right-clicking the loop toggle clears the markers. They are available on Facebook too, where most of the bar is hidden, because looping is the point of the tool on a dance video.
+The same controls are on the bar: a loop toggle that carries the state, a jump-back-to-A button, and a popup on the toggle holding `A`, `B`, `clr`, `clip` and the zoom switch. Right-clicking the loop toggle clears the markers. They are available on Facebook too, where most of the bar is hidden, because looping is the point of the tool on a dance video.
 
 ### Trim handles
 
@@ -304,6 +304,7 @@ The marked segment is painted on the seek bar with a draggable handle at each en
 
   An earlier version compared the handle gap against an absolute 190 pixels. On a seek bar only 130–180 pixels wide that target can never be met, so "needs more zoom" stayed true and the window tracked the span on every single call — the bar appeared to reset and skip around while a handle was being dragged closer. The thresholds are now fractions of the bar, which are achievable by construction: a zoom targets 50% and re-triggers below 20%, so each one settles. The absolute pixel figure survives only as a guard that suppresses zooming on a bar wide enough not to need it.
 
+- **Dragging a handle to the edge pans the window.** Because the view is frozen during a drag, the furthest B could reach was the window's right edge: measured, it sat at `0:23.51` in an `0:18–0:23` window however long the pointer was held there, so a loop could not be extended past what was on screen. Holding near either edge now scrolls the window that way at a steady rate — around three seconds of video per second on a five-second window — with the handle pinned to the edge while the timeline moves under it. The pan is driven by elapsed time rather than by the pointer's position, which is what keeps it out of the feedback loop described next.
 - **The window is frozen for the duration of a drag.** Moving a marker changes the window, which changes the pointer-to-time mapping, which moves the handle away from the pointer — a feedback loop. The window is re-evaluated once on release instead, so a drag never rescales underneath you. Walking a marker 11 seconds inwards across 45 positions now changes the window three times rather than 45.
 - **The timeline runs a little past the end of the video.** With B inside a second of the end, the window would stop exactly at the media, putting the B handle on the track's right edge with nothing after it — measured at **1 pixel** of track beyond it, which is not something you can grab. The window is now extended past the end of the video by enough to leave about 20 pixels of empty track, the post-roll a clip trimmer leaves for the same reason.
 
@@ -323,7 +324,7 @@ On Facebook the extension shows a compact 150px trim timeline for this purpose. 
 - **Order does not matter.** Mark the end before the start if that is how you spotted it; the range sorts itself.
 - **Very short loops are refused.** A range under three frames thrashes the decoder and shows nothing useful, so the loop toggle stays disabled until the span is worth playing.
 - **Restarts are paced** through the same single-seek-in-flight path as everything else, so a tight loop cannot issue a new seek before the last one landed.
-- **Slow it down.** The loop speed menu on the loop button is the control for this. On Instagram the bar's separate speed control still sets the general playback speed; on Facebook that one belongs to their player.
+- **Slow it down.** The speed control on the bar, down to `0.1x`. It applies to the loop as well; the loop has no speed of its own.
 - **Export it.** **clip** in the loop menu saves the marked segment and opens it in theater mode.
 - Markers belong to the video. They clear when the player loads something else, since Instagram and Facebook both recycle `<video>` elements between posts.
 

@@ -17,10 +17,13 @@
   // iOS Safari has no HTMLMediaElement.captureStream, so clip export cannot work.
   document.documentElement.classList.toggle('ig-vc-no-clip', typeof HTMLMediaElement.prototype.captureStream !== 'function');
 
-  const DEFAULT_SETTINGS = { volume: 1, muted: false, playbackRate: 1, loopRate: 1 };
-  const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
-  // Slow-biased, because the point of a practice loop is studying a fast move.
-  const LOOP_SPEEDS = [0.1, 0.25, 0.5, 0.75, 1];
+  const DEFAULT_SETTINGS = { volume: 1, muted: false, playbackRate: 1 };
+  // One speed control, not two. The loop used to carry its own slow-biased menu
+  // and its own rate, which meant two speed menus a step apart in the same bar.
+  // The slow end moved here so nothing is out of reach: 0.1x and 0.25x were
+  // only ever available inside the loop menu, and they are the whole point on a
+  // fast dance move.
+  const SPEEDS = [0.1, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 2];
 
   // Frame stepping
   const DEFAULT_FPS = 30;
@@ -70,6 +73,18 @@
   // Touch loop painting on the seek track: long-press sets A under the finger,
   // the track zooms to ±PAINT_WINDOW_SECONDS around it, dragging previews frames
   // and lifting the finger sets B and starts the loop.
+  // Dragging a handle to the edge of a zoomed window used to stop dead. The view
+  // is frozen during a drag -- deliberately, because recomputing it mid-drag made
+  // the handle chase the pointer -- so the furthest B could reach was the
+  // window's right edge. Measured: held at the edge for 2.4s, B stayed put at
+  // 0:23.51 in an 0:18-0:23 window on a 105s video.
+  //
+  // Holding near an edge now pans the window that way. The pan is driven by
+  // ELAPSED TIME, not by the pointer's position, which is what keeps it out of
+  // the feedback loop that made freezing necessary in the first place.
+  const EDGE_PAN_ZONE_PX = 24;
+  const EDGE_PAN_PER_SEC = 0.6;      // fraction of the visible window per second
+  const EDGE_PAN_MIN_PER_SEC = 1.5;  // seconds of media per second, floor for a tight window
   const LONG_PRESS_MS = 450;
   const LONG_PRESS_SLOP_PX = 10;
   const PAINT_WINDOW_SECONDS = 10;
@@ -607,8 +622,6 @@
       <div class="ig-vc-wrap ig-vc-loop-wrap">
         <button type="button" class="ig-vc-btn ig-vc-loop-toggle"></button>
         <div class="ig-vc-popup"><div class="ig-vc-box ig-vc-loop-box">
-          ${LOOP_SPEEDS.map((s) => `<button type="button" class="ig-vc-opt ig-vc-loop-speed" data-loop-speed="${s}">${s}x</button>`).join('')}
-          <div class="ig-vc-loop-sep"></div>
           <button type="button" class="ig-vc-opt ig-vc-loop-onoff">loop</button>
           <button type="button" class="ig-vc-opt ig-vc-loop-in">A</button>
           <button type="button" class="ig-vc-opt ig-vc-loop-out">B</button>
@@ -634,7 +647,6 @@
     // clip the rare one, so the bar slot the clip button held is now the link.
     const loopLinkBtn = bar.querySelector('.ig-vc-loop-link');
     const hintEl = bar.querySelector('.ig-vc-hint');
-    const loopSpeedOpts = bar.querySelectorAll('.ig-vc-loop-speed');
     const handleA = bar.querySelector('.ig-vc-handle-a');
     const handleB = bar.querySelector('.ig-vc-handle-b');
     const seekTrack = seekEl.querySelector('.ig-vc-track');
@@ -731,7 +743,6 @@
     let looping = false;
     let loopRafHandle = null;
     let zoomDisabled = false;
-    let preLoopRate = null;
     let linkFeedbackTimer = null;
     let urlWriteTimer = null;
 
@@ -756,7 +767,7 @@
           const range = loopRange();
           const href = location.href;
           const next = range
-            ? core.formatLoopUrl(href, range.start, range.end, settings.loopRate)
+            ? core.formatLoopUrl(href, range.start, range.end, settings.playbackRate)
             : href.split('#')[0];
           if (!next || next === href) return;
           history.replaceState(history.state, '', next);
@@ -819,6 +830,7 @@
     };
 
     const thawView = () => {
+      stopEdgePan();
       frozenView = null;
     };
 
@@ -835,11 +847,15 @@
       // Facebook: a volume written by us is reverted by their player within a
       // second, so this would be a losing battle as well as a wrong one.
       //
-      // While scrubbing, rate and mute belong to the scrub; enforcing the saved
+      // While scrubbing, rate and mute belong to the scrub: enforcing the saved
       // preferences would cancel it instantly.
-      // While scrubbing or looping, the rate and mute belong to that motion; the
-      // saved preferences would cancel it instantly.
-      if (!augmenting && !scrubbing && !looping) {
+      //
+      // Looping used to be excluded here too, because the loop carried its own
+      // rate and sync would have fought it. With one speed control the loop
+      // plays at the bar's speed, so excluding it meant the speed buttons did
+      // nothing at all while a loop ran -- measured as the rate staying at 1
+      // after clicking 0.25x.
+      if (!augmenting && !scrubbing) {
         if (Math.abs(video.volume - vol) > 0.005) video.volume = vol;
         if (!video.paused && video.muted !== Boolean(settings.muted)) video.muted = Boolean(settings.muted);
         if (Math.abs(video.playbackRate - rate) > 0.01) video.playbackRate = rate;
@@ -871,8 +887,8 @@
       loopToggleBtn.classList.toggle('unavailable', !range);
       loopToggleBtn.title = range
         ? (looping
-          ? `Looping at ${Number(core.clampPlaybackRate(settings.loopRate, 1))}x — click to stop  \\`
-          : `Loop ${formatTime(range.start)}–${formatTime(range.end)} at ${Number(core.clampPlaybackRate(settings.loopRate, 1))}x  \\`)
+          ? `Looping at ${Number(core.clampPlaybackRate(settings.playbackRate, 1))}x — click to stop  \\`
+          : `Loop ${formatTime(range.start)}–${formatTime(range.end)} at ${Number(core.clampPlaybackRate(settings.playbackRate, 1))}x  \\`)
         : 'Set both A and B to enable looping';
       loopRestartBtn.innerHTML = ICONS.restart;
       loopRestartBtn.classList.toggle('unavailable', loopIn === null);
@@ -886,17 +902,6 @@
       loopZoomBtn.title = view.zoomed
         ? `Timeline zoomed to ${formatTime(view.start)}–${formatTime(view.end)} — show the whole video instead`
         : 'Zoom the timeline around a tight loop so the markers are easier to aim at';
-
-      const loopRate = core.clampPlaybackRate(settings.loopRate, 1);
-      for (const opt of loopSpeedOpts) {
-        opt.classList.toggle('active', Math.abs(Number(opt.dataset.loopSpeed) - loopRate) < 0.001);
-        // With no loop to apply to, the menu is only a preference for later.
-        // Saying so beats an "active" highlight on a control that cannot act.
-        opt.classList.toggle('unavailable', !range);
-        opt.title = range
-          ? `Play the loop at ${opt.dataset.loopSpeed}x`
-          : `Set A and B first — this will be the loop speed (${opt.dataset.loopSpeed}x)`;
-      }
 
       // A loop link only exists once a segment is marked, so the bar button is
       // hidden rather than shown disabled when there is nothing to share. The
@@ -1329,6 +1334,56 @@
       flushDragSeek();
     };
 
+    let edgePanDir = 0;
+    let edgePanX = 0;
+    let edgePanRaf = null;
+    let edgePanPrev = 0;
+
+    const stopEdgePan = () => {
+      if (edgePanRaf !== null) cancelAnimationFrame(edgePanRaf);
+      edgePanRaf = null;
+      edgePanDir = 0;
+    };
+
+    const edgePanTick = (now) => {
+      edgePanRaf = null;
+      if (!trimDrag || !edgePanDir || !frozenView) return;
+      // Clamped so a stalled frame cannot jump the window a long way.
+      const dt = Math.min(0.1, Math.max(0, (now - edgePanPrev) / 1000));
+      edgePanPrev = now;
+      const width = frozenView.end - frozenView.start;
+      const pad = frozenView.padSeconds || 0;
+      const step = Math.max(width * EDGE_PAN_PER_SEC, EDGE_PAN_MIN_PER_SEC) * dt * edgePanDir;
+      // The media stays inside the window: panning is for reaching more of the
+      // video, never for scrolling off the end of it.
+      const limit = Math.max(0, video.duration - (width - pad));
+      const start = Math.min(Math.max(0, frozenView.start + step), limit);
+      if (Math.abs(start - frozenView.start) > 1e-9) {
+        frozenView = { ...frozenView, start, end: start + width };
+        // Re-read the same pointer position through the panned window, so the
+        // marker keeps moving while the finger or mouse holds still.
+        moveTrim(edgePanX);
+      }
+      edgePanRaf = requestAnimationFrame(edgePanTick);
+    };
+
+    // Called from the drag handlers rather than from moveTrim, which the tick
+    // itself calls.
+    const updateEdgePan = (clientX) => {
+      if (!trimDrag || !frozenView) return stopEdgePan();
+      const rect = seekTrack.getBoundingClientRect();
+      if (rect.width <= 0) return stopEdgePan();
+      const dir = clientX >= rect.right - EDGE_PAN_ZONE_PX ? 1
+        : clientX <= rect.left + EDGE_PAN_ZONE_PX ? -1
+          : 0;
+      if (!dir) return stopEdgePan();
+      edgePanX = clientX;
+      if (edgePanDir === dir && edgePanRaf !== null) return;
+      edgePanDir = dir;
+      edgePanPrev = performance.now();
+      if (edgePanRaf === null) edgePanRaf = requestAnimationFrame(edgePanTick);
+    };
+
     const bindTrimHandle = (handle, which) => {
       handle.addEventListener('pointerdown', (e) => {
         if (e.button !== 0) return;
@@ -1346,10 +1401,12 @@
         showHint(which);
         revealBar(true);
         moveTrim(e.clientX);
+        updateEdgePan(e.clientX);
       });
       handle.addEventListener('pointermove', (e) => {
         if (trimDrag !== which || !handle.hasPointerCapture(e.pointerId)) return;
         moveTrim(e.clientX);
+        updateEdgePan(e.clientX);
       });
       for (const evt of ['pointerup', 'pointercancel']) {
         handle.addEventListener(evt, (e) => {
@@ -1433,7 +1490,7 @@
       );
       loopIn = snap(wanted.start);
       loopOut = snap(wanted.end);
-      if (Number.isFinite(wanted.rate)) saveSettings({ loopRate: core.clampPlaybackRate(wanted.rate, 1) });
+      if (Number.isFinite(wanted.rate)) saveSettings({ playbackRate: core.clampPlaybackRate(wanted.rate, 1) });
       if (loopRange()) {
         looping = true;
         startLoopWatcher();
@@ -1616,10 +1673,8 @@
     };
 
     const startLoopWatcher = () => {
-      // A practice loop plays at its own rate, borrowed from whatever was in
-      // effect and handed back when looping stops.
-      if (preLoopRate === null) preLoopRate = video.playbackRate;
-      video.playbackRate = core.clampPlaybackRate(settings.loopRate, 1);
+      // The loop plays at the speed the bar is set to; it no longer keeps a rate
+      // of its own, so there is nothing to borrow or hand back.
       if (loopRafHandle === null) loopRafHandle = requestAnimationFrame(loopTick);
     };
 
@@ -1627,13 +1682,6 @@
       if (loopRafHandle !== null) {
         cancelAnimationFrame(loopRafHandle);
         loopRafHandle = null;
-      }
-      if (preLoopRate !== null) {
-        // In augment mode the host site owns playback speed, so the only correct
-        // thing to restore is whatever was actually in effect beforehand.
-        const restore = augmenting ? preLoopRate : (Number(settings.playbackRate) || 1);
-        preLoopRate = null;
-        video.playbackRate = core.clampPlaybackRate(restore, 1);
       }
     };
 
@@ -1898,7 +1946,15 @@
       saveSettings({ volume: !muted && settings.volume === 0 ? 0.5 : settings.volume, muted });
       video.muted = muted;
     });
-    for (const opt of speedOpts) opt.addEventListener('click', () => saveSettings({ playbackRate: Number(opt.dataset.speed) }));
+    for (const opt of speedOpts) {
+      opt.addEventListener('click', () => {
+        saveSettings({ playbackRate: Number(opt.dataset.speed) });
+        // The speed is part of a shared loop link, so the address bar follows
+        // it. This used to hang off the loop menu's own speed buttons, which
+        // are gone.
+        writeLoopToUrl();
+      });
+    }
     speedBtn.addEventListener('contextmenu', () => saveSettings({ playbackRate: 1 }));
     loopInBtn.addEventListener('click', setLoopIn);
     loopOutBtn.addEventListener('click', setLoopOut);
@@ -1944,26 +2000,6 @@
     }
     if (TOUCH) bar.addEventListener('pointerdown', () => revealBar(frameMode), { signal });
     loopToggleBtn.addEventListener('contextmenu', clearLoop);
-    for (const opt of loopSpeedOpts) {
-      opt.addEventListener('click', () => {
-        const rate = core.clampPlaybackRate(opt.dataset.loopSpeed, 1);
-        saveSettings({ loopRate: rate });
-        // Picking a practice speed is a request to hear the loop at that speed
-        // now. With a loop marked but the toggle off, this used to light the
-        // button and change nothing, so the control looked broken: it claimed
-        // an effect it had not had. Engage the loop instead.
-        if (loopRange()) {
-          if (!looping) {
-            looping = true;
-            startLoopWatcher();
-          }
-          video.playbackRate = rate;
-        }
-        revealBar(true);
-        sync();
-        writeLoopToUrl();
-      });
-    }
     clipBtn.addEventListener('click', recordClip);
     // Theater mode on the fullscreen button's right-click: a page overlay that
     // shows only the video while leaving the browser's tabs and address bar in
@@ -1989,7 +2025,7 @@
         sync();
         return;
       }
-      const url = core.formatLoopUrl(location.href, range.start, range.end, settings.loopRate);
+      const url = core.formatLoopUrl(location.href, range.start, range.end, settings.playbackRate);
       if (!url) return;
       let copied = false;
       try {

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Socials Video Controls",
-  "version": "1.17.0",
+  "version": "1.18.0",
   "description": "Frame-accurate video navigation, A-B loop practice, clip export and theater mode for Instagram and Facebook.",
   "permissions": [
     "storage",

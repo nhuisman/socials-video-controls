@@ -209,6 +209,80 @@ module.exports = (site) => {
       await page.key('|');
     });
 
+    h.it('extends the loop past the window when B is held at the edge', async (page) => {
+      // Reported as "drag B to the far right and it doesn't auto extend". The
+      // view is frozen during a drag, so the furthest B could reach was the
+      // zoomed window's right edge -- measured, it sat at 0:23.51 in an
+      // 0:18-0:23 window however long the pointer was held there. Holding near
+      // an edge now pans the window, driven by elapsed time so it cannot feed
+      // back into the pointer-to-time mapping.
+      await h.hoverVideo(page);
+      await requireUsableTrack(page);
+      await h.markLoop(page, 20, 22);
+      await h.sleep(700);
+
+      // The live readout, not the button titles: sync() only refreshes those on
+      // release, which is what made an earlier version of this look broken.
+      const readB = () => page.eval(h.barExpr(`
+        const hb = bar.querySelector('.ig-vc-handle-b').getBoundingClientRect();
+        const tr = bar.querySelector('.ig-vc-track').getBoundingClientRect();
+        // "0:22.00 · f660" -> 22. Parsed by splitting rather than with a regex:
+        // a backslash escape inside this template literal does not survive.
+        const head = bar.querySelector('.ig-vc-time').textContent.split(' ')[0];
+        const parts = head.split(':');
+        const seconds = parts.length === 2
+          ? Number(parts[0]) * 60 + Number(parts[1])
+          : null;
+        return {
+          seconds: Number.isFinite(seconds) ? seconds : null,
+          fromTrackRight: Math.round(tr.right - hb.left)
+        };
+      `), { label: 'live B' });
+
+      const geo = await h.seekGeometry(page);
+      const trackRight = geo.track.left + geo.track.width;
+      const samples = [];
+      await page.dragHold(
+        { x: geo.handleB.x, y: geo.track.y },
+        { x: trackRight - 5, y: geo.track.y },
+        { holdMs: 2000, sampleMs: 500, onSample: async () => samples.push(await readB()) }
+      );
+
+      h.assert(samples.length >= 3, `expected several samples, got ${samples.length}`);
+      const seconds = samples.map((s) => s.seconds);
+      h.assert(seconds.every((v) => typeof v === 'number'), `unreadable readout: ${JSON.stringify(samples)}`);
+
+      // It must keep advancing while the pointer holds perfectly still.
+      for (let i = 1; i < seconds.length; i++) {
+        h.assert(seconds[i] > seconds[i - 1] + 0.2,
+          `B stopped advancing while held at the edge: ${JSON.stringify(seconds)}`);
+      }
+      // And it must get well past where the frozen window used to cap it.
+      h.assert(seconds[seconds.length - 1] > 24,
+        `B only reached ${seconds[seconds.length - 1]}s; the window is not panning`);
+      // The handle stays pinned near the edge while the window moves under it.
+      for (const s of samples.slice(1)) {
+        h.assert(s.fromTrackRight < 30,
+          `the handle drifted ${s.fromTrackRight}px from the edge instead of staying pinned`);
+      }
+
+      // After release the loop must keep what the pan reached, and the handle
+      // must be grabbable again rather than stranded on the edge.
+      await h.sleep(700);
+      const settled = await page.eval(h.barExpr(`
+        const hb = bar.querySelector('.ig-vc-handle-b').getBoundingClientRect();
+        const tr = bar.querySelector('.ig-vc-track').getBoundingClientRect();
+        return { fromTrackRight: Math.round(tr.right - hb.left), title: bar.querySelector('.ig-vc-loop-out').title };
+      `), { label: 'settled' });
+      // The old behaviour capped B at the frozen window's end, ~23.5s for the
+      // 0:18-0:23 window this loop produces, no matter how long it was held.
+      const last = seconds[seconds.length - 1];
+      h.assert(last > 25, `B reached only ${last}s, barely past the old ~23.5s cap`);
+      h.assert(settled.fromTrackRight > 20,
+        `after release the handle is still ${settled.fromTrackRight}px from the edge; it should be grabbable`);
+      await page.key('|');
+    });
+
     h.it('shows a playhead distinct from the loop span', async (page) => {
       await h.hoverVideo(page);
       await h.markLoop(page, 20, 26);

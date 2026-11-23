@@ -140,7 +140,7 @@ module.exports = (site) => {
       await h.markLoop(page, START, end);
 
       if (!(await h.waitForSeekable(page, START))) h.skip('the loop region never buffered');
-      await h.clickBarControl(page, '.ig-vc-loop-speed[data-loop-speed="0.5"]');
+      await h.clickBarControl(page, '.ig-vc-opt[data-speed="0.5"]');
       await h.clickBarControl(page, '.ig-vc-clip');
 
       const deadline = Date.now() + Math.ceil((h.config.clipLoopSeconds + 14) * 1000);
@@ -157,7 +157,7 @@ module.exports = (site) => {
       // is normal speed. Afterwards it must give back exactly what it took,
       // which with the loop running at 0.5x means 0.5x, not 1x.
       const state = await h.barState(page);
-      h.equal(state.activeLoopSpeed, '0.5x', 'the loop speed selection survives a recording');
+      h.equal(state.activeSpeed, '0.5x', 'the speed selection survives a recording');
       h.equal(state.looping, true, 'the loop should still be running after a recording');
       h.equal(state.playbackRate, 0.5,
         'the player should be handed back at the loop speed it was borrowed from');

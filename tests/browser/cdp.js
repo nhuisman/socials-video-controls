@@ -121,6 +121,34 @@ class Page {
     await sleep(250);
   }
 
+  // Presses, moves to a position, holds still there, then releases. Needed for
+  // anything that keeps acting while the pointer does not move -- edge panning
+  // a zoomed timeline, for one -- which `drag` cannot express because it always
+  // releases at the end.
+  async dragHold(from, to, { holdMs = 2000, sampleMs = 0, onSample = null } = {}) {
+    await this.mouseMove(from.x, from.y);
+    await sleep(120);
+    await this.send('Input.dispatchMouseEvent', {
+      type: 'mousePressed', x: from.x, y: from.y, button: 'left', buttons: 1, clickCount: 1
+    });
+    await sleep(150);
+    await this.send('Input.dispatchMouseEvent', {
+      type: 'mouseMoved', x: to.x, y: to.y, button: 'left', buttons: 1
+    });
+    if (onSample && sampleMs > 0) {
+      for (let waited = 0; waited < holdMs; waited += sampleMs) {
+        await sleep(sampleMs);
+        await onSample(waited + sampleMs);
+      }
+    } else {
+      await sleep(holdMs);
+    }
+    await this.send('Input.dispatchMouseEvent', {
+      type: 'mouseReleased', x: to.x, y: to.y, button: 'left', buttons: 0, clickCount: 1
+    });
+    await sleep(250);
+  }
+
   async key(key, { text = null, holdMs = 40, code = null, keyCode = null } = {}) {
     const down = { type: 'keyDown', key };
     if (text !== null) down.text = text;

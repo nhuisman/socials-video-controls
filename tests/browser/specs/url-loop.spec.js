@@ -53,7 +53,7 @@ module.exports = (site) => {
         `A should come from the URL, got "${state.loopInTitle}"`);
       h.assert(/34/.test(state.loopOutTitle || ''),
         `B should come from the URL, got "${state.loopOutTitle}"`);
-      h.equal(state.activeLoopSpeed, '0.25x', 'the loop rate should come from the URL too');
+      h.equal(state.activeSpeed, '0.25x', 'the speed should come from the URL too');
       h.equal(state.hasLoop, true, 'a URL loop is a loop, so the loop-link button should show');
       await page.key('|');
     });
@@ -110,7 +110,7 @@ module.exports = (site) => {
       h.close(parts[1], 24, 0.5, 'the address bar carries B');
 
       // Changing the practice speed is part of the shared loop.
-      await h.clickBarControl(page, '.ig-vc-loop-speed[data-loop-speed="0.25"]');
+      await h.clickBarControl(page, '.ig-vc-opt[data-speed="0.25"]');
       await h.sleep(1000);
       parts = parse(await hash());
       h.equal(parts[2], 0.25, 'the address bar carries the loop rate');
@@ -141,7 +141,7 @@ module.exports = (site) => {
       await h.sleep(900);
       await h.markLoop(page, 30, 33);
       await h.sleep(900);
-      await h.clickBarControl(page, '.ig-vc-loop-speed[data-loop-speed="0.5"]');
+      await h.clickBarControl(page, '.ig-vc-opt[data-speed="0.5"]');
       await h.sleep(900);
       const after = await page.eval('history.length', { label: 'history after' });
       h.assert(after - before <= 1,
@@ -152,7 +152,7 @@ module.exports = (site) => {
     h.it('builds a shareable link from the current loop', async (page) => {
       await h.hoverVideo(page);
       await h.markLoop(page, 20, 24);
-      await h.clickBarControl(page, '.ig-vc-loop-speed[data-loop-speed="0.5"]');
+      await h.clickBarControl(page, '.ig-vc-opt[data-speed="0.5"]');
 
       // The clipboard needs a trusted gesture that a scripted click does not
       // supply, so assert on the link the button reports rather than on the

@@ -244,18 +244,6 @@
   gap: 1px;
 }
 
-/* Divides the loop speeds from the loop actions in the same popup */
-.ig-vc-loop-sep {
-  width: 100%;
-  height: 1px;
-  margin: 2px 0;
-  background: rgba(255, 255, 255, 0.2);
-}
-
-.ig-vc-loop-speed {
-  font-variant-numeric: tabular-nums;
-}
-
 .ig-vc-loop-in.active,
 .ig-vc-loop-out.active {
   background: rgba(120, 200, 255, 0.3);
@@ -299,8 +287,7 @@
   color: rgb(255, 120, 120);
 }
 
-.ig-vc-opt.ig-vc-clip.unavailable,
-.ig-vc-opt.ig-vc-loop-speed.unavailable {
+.ig-vc-opt.ig-vc-clip.unavailable {
   opacity: 0.4;
 }
 
@@ -574,7 +561,10 @@
 }
 
 .ig-vc-speed-box {
+  /* Eight speeds now that the slow end moved here from the loop menu, so they
+     wrap into two columns rather than making one very tall popup. */
   width: auto;
+  max-height: 60vh;
   padding: 3px;
   gap: 1px;
 }

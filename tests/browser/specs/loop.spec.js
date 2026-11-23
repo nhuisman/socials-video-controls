@@ -121,94 +121,51 @@ module.exports = (site) => {
       await page.key('|');
     });
 
-    h.it('applies a loop speed from the loop menu', async (page) => {
+    h.it('plays the loop at the speed the bar is set to', async (page) => {
+      // There used to be two speed menus: a general one and a slow-biased one
+      // inside the loop popup, with the loop borrowing the rate while it ran
+      // and handing it back afterwards. One control now, and the slow end
+      // (0.1x, 0.25x) moved into it so nothing became unreachable.
       await h.hoverVideo(page);
       await h.markLoop(page, LOOP_START, LOOP_END);
-      await h.clickBarControl(page, '.ig-vc-loop-speed[data-loop-speed="0.25"]');
+      await h.clickBarControl(page, '.ig-vc-opt[data-speed="0.25"]');
       await h.sleep(600);
 
       const samples = await page.eval(playAndSample(12, 120), { label: 'loop rates' });
       const rates = [...new Set(samples.map((s) => s.rate))];
       h.assert(rates.length === 1 && rates[0] === 0.25,
         `the loop should hold 0.25x throughout, got ${JSON.stringify(rates)}`);
-      h.equal((await h.barState(page)).activeLoopSpeed, '0.25x', 'the chosen loop speed is marked active');
+      h.equal((await h.barState(page)).activeSpeed, '0.25x', 'the chosen speed is marked active');
 
-      // Leaving the loop must give the rate back, not leave the player stuck
-      // in slow motion.
+      // And it stays put when looping stops: there is no second rate to revert
+      // to, which is the behaviour that was traded away for one control.
       await page.key('\\');
       await h.sleep(600);
       const after = await h.barState(page);
       h.equal(after.looping, false, 'the loop should be off');
-      h.equal(after.playbackRate, 1, 'turning the loop off restores normal speed');
-      await page.key('|');
-    });
+      h.equal(after.playbackRate, 0.25, 'the speed is the bar\'s, so it survives the loop ending');
 
-    h.it('keeps the loop speed separate from the general playback speed', async (page) => {
-      // In augment mode the host site owns playback speed and the extension
-      // deliberately does not fight it for the general rate, so there is no
-      // "general speed" of ours to come back to. stopLoopWatcher() encodes the
-      // same split.
-      if (site.expectedMode === 'augment') {
-        h.skip('augment mode leaves general playback speed to the host site');
-      }
-      await h.hoverVideo(page);
-      await page.key('|');
-      // Pick a general speed first, with no loop in play.
-      await h.clickBarControl(page, '.ig-vc-opt[data-speed="1.5"]');
-      await h.sleep(400);
-      const general = await h.barState(page);
-      h.equal(general.playbackRate, 1.5, 'the general speed control should apply');
-
-      // Now loop, which runs at its own rate.
-      await h.markLoop(page, LOOP_START, LOOP_END);
-      await h.clickBarControl(page, '.ig-vc-loop-speed[data-loop-speed="0.5"]');
-      await h.sleep(500);
-      const looping = await h.barState(page);
-      h.equal(looping.playbackRate, 0.5, 'the loop speed should take over while looping');
-
-      // Leaving the loop should restore the speed the user chose, not 1x.
-      await page.key('\\');
-      await h.sleep(600);
-      const restored = await h.barState(page);
-      h.equal(restored.playbackRate, 1.5,
-        'leaving the loop should restore the general speed the user had set');
-      await page.key('|');
       await h.clickBarControl(page, '.ig-vc-opt[data-speed="1"]');
-    });
-
-    h.it('applies a loop speed picked while the loop is paused', async (page) => {
-      // Picking a practice speed used to light the button and change nothing
-      // whenever the loop toggle was off: the control claimed an effect it had
-      // not had. Choosing a speed is a request to hear the loop at it.
-      await h.hoverVideo(page);
-      await h.markLoop(page, LOOP_START, LOOP_END);
-      await page.key('\\');
-      await h.sleep(500);
-      h.equal((await h.barState(page)).looping, false, 'the loop should be off to start');
-
-      await h.clickBarControl(page, '.ig-vc-loop-speed[data-loop-speed="0.25"]');
-      await h.sleep(600);
-      const after = await h.barState(page);
-      h.equal(after.activeLoopSpeed, '0.25x', 'the chosen speed should be marked');
-      h.equal(after.looping, true, 'choosing a practice speed should engage the loop');
-      h.equal(after.playbackRate, 0.25, 'the chosen speed should actually apply');
       await page.key('|');
     });
 
-    h.it('marks loop speeds unavailable when there is no loop to apply them to', async (page) => {
+    h.it('offers the slow speeds the loop menu used to own', async (page) => {
+      // 0.1x and 0.25x were only ever reachable inside the loop menu, and they
+      // are the whole point on a fast move. Removing that menu must not have
+      // removed them.
       await h.hoverVideo(page);
-      await page.key('|');
-      await h.sleep(400);
-      const unavailable = await page.eval(h.barExpr(`
-        const opts = [...bar.querySelectorAll('.ig-vc-loop-speed')];
-        return {
-          total: opts.length,
-          unavailable: opts.filter((o) => o.classList.contains('unavailable')).length
-        };
-      `), { label: 'loop speed state' });
-      h.assert(unavailable.total > 0, 'there should be loop speed options');
-      h.equal(unavailable.unavailable, unavailable.total,
-        'with no loop marked, every loop speed should read as unavailable rather than active');
+      const speeds = await page.eval(h.barExpr(`
+        return [...bar.querySelectorAll('.ig-vc-opt[data-speed]')].map((b) => b.dataset.speed);
+      `), { label: 'speed options' });
+      for (const wanted of ['0.1', '0.25', '1', '2']) {
+        h.assert(speeds.includes(wanted),
+          `the speed menu should offer ${wanted}x; it has ${JSON.stringify(speeds)}`);
+      }
+      // And there is exactly one speed menu, not two.
+      const loopSpeedCount = await page.eval(h.barExpr(`
+        return bar.querySelectorAll('.ig-vc-loop-speed').length;
+      `), { label: 'loop speed count' });
+      h.equal(loopSpeedCount, 0, 'the loop popup should no longer carry its own speed menu');
     });
 
     h.it('refuses a loop shorter than a few frames', async (page) => {

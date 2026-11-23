@@ -247,7 +247,9 @@ async function barState(page) {
       clipUnavailable: bar.querySelector('.ig-vc-clip').classList.contains('unavailable'),
       clipLabel: bar.querySelector('.ig-vc-clip').textContent,
       restartClasses: cls('.ig-vc-loop-restart'),
-      activeLoopSpeed: [...bar.querySelectorAll('.ig-vc-loop-speed')].filter((b) => b.classList.contains('active')).map((b) => b.textContent)[0] || null,
+      // One speed control now: the loop plays at the bar's speed rather than
+      // carrying a second, slow-biased menu of its own.
+      activeSpeed: [...bar.querySelectorAll('.ig-vc-opt[data-speed]')].filter((b) => b.classList.contains('active')).map((b) => b.textContent)[0] || null,
       currentTime: video ? Number(video.currentTime.toFixed(3)) : null,
       paused: video ? video.paused : null,
       muted: video ? video.muted : null,
