@@ -37,7 +37,7 @@ A browser extension that adds video playback controls to Instagram and frame-acc
 
 1. Clone this repository:
    ```bash
-   git clone https://git.skp.my.id/surya/instagram-video-control.git
+   git clone https://github.com/nhuisman/socials-video-controls.git
    ```
 2. Open the extension manager in your browser:
    - **Microsoft Edge**: Navigate to `edge://extensions`
@@ -45,6 +45,51 @@ A browser extension that adds video playback controls to Instagram and frame-acc
 3. Toggle on **Developer mode** (top-right or bottom-left).
 4. Click **Load unpacked** and select the cloned `instagram-video-control` directory.
 5. Open [instagram.com](https://www.instagram.com) and start playing any video post or Reel.
+
+### Safari, iPhone and iPad (userscript)
+
+iOS cannot load an unpacked extension, and the Xcode route needs a device
+install that is not always available. So the same code also ships as a single
+userscript, for a manager such as [Userscripts](https://apps.apple.com/us/app/userscripts/id1463298887)
+(free, open source, App Store, iOS and macOS). Tampermonkey and Stay work too.
+
+1. Install the userscript manager and point it at a directory
+2. Copy `dist/socials-video-controls.user.js` into that directory
+3. Enable the extension for instagram.com and facebook.com, and grant it permission
+
+Put that directory in iCloud Drive and the Mac and the iPhone share one copy.
+
+**Test it on a Mac first.** Userscripts is on the Mac App Store as well, and
+Safari's Responsive Design Mode gives you an iPhone viewport with touch events.
+That exercises WebKit — the same engine Orion uses — without an iOS install.
+
+`dist/socials-video-controls.user.js` is **generated**. Do not edit it:
+
+```bash
+node tools/build-userscript.js            # rebuild after changing content/
+node tools/build-userscript.js --check     # fail if the committed copy is stale
+```
+
+The unit suite runs `--check`, so a stale bundle fails the build rather than
+quietly installing without whatever changed.
+
+What differs in the userscript, all forced by there being no extension runtime:
+
+| | |
+| :--- | :--- |
+| One file | The CSS is carried as a string and injected at runtime, verified, with a constructed-stylesheet fallback in case a page's `style-src` refuses it |
+| `chrome.storage.local` | Shimmed onto `localStorage`, and only when a real one is absent |
+| Timing | Everything arrives at `document-start`; the DOM-dependent half waits, as `document_idle` would have |
+| No service worker | It only re-injected into already-open tabs on install, which a userscript manager does on the next page load |
+
+It still contains no `eval`, no `new Function`, no `@require` and no network
+request, and asks for `@grant none`. The unit suite asserts each of those
+against the built file, because a build step is not a good reason to weaken the
+one strong claim this project makes about itself.
+
+**Clip export does not work under WebKit.** Safari does not implement
+`HTMLMediaElement.captureStream`, so there is nothing to record from. The
+control reports itself unsupported rather than failing.
 
 ---
 

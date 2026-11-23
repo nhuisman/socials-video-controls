@@ -1086,6 +1086,48 @@ group('clip export', () => {
   });
 });
 
+// The committed userscript bundle is a build artifact, and a stale one is worse
+// than an absent one: it installs cleanly and silently lacks whatever changed.
+// Regenerating it in memory and comparing is cheap, so the always-run suite is
+// the right place to catch the drift.
+group('userscript bundle', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const root = path.resolve(__dirname, '..');
+  const bundlePath = path.join(root, 'dist', 'socials-video-controls.user.js');
+
+  test('is committed', () => {
+    assert(fs.existsSync(bundlePath),
+      'dist/socials-video-controls.user.js is missing; run node tools/build-userscript.js');
+  });
+
+  test('is up to date with content/ and the manifest', () => {
+    if (!fs.existsSync(bundlePath)) return;
+    // --check regenerates in memory and compares, without writing. Building
+    // first and then comparing would always pass.
+    const result = require('child_process').spawnSync(
+      process.execPath,
+      [path.join(root, 'tools', 'build-userscript.js'), '--check'],
+      { encoding: 'utf8' }
+    );
+    assert(result.status === 0,
+      `the committed bundle is stale: ${(result.stderr || result.stdout || '').trim()}`);
+  });
+
+  test('carries no eval or remote code', () => {
+    if (!fs.existsSync(bundlePath)) return;
+    const bundle = fs.readFileSync(bundlePath, 'utf8');
+    // The strongest claim this project makes about itself. A build step is not
+    // a good reason to give it up, so it is asserted on the artifact.
+    assert(!/\beval\s*\(/.test(bundle), 'bundle contains eval(');
+    assert(!/new\s+Function\s*\(/.test(bundle), 'bundle contains new Function(');
+    assert(!/importScripts\s*\(/.test(bundle), 'bundle contains importScripts(');
+    // @require would fetch code at install time from somewhere else.
+    assert(!/^\/\/ @require/m.test(bundle), 'bundle declares @require');
+    assert(/^\/\/ @grant        none$/m.test(bundle), 'bundle should request no privileged grants');
+  });
+});
+
 //#region Summary
 
 console.log('');

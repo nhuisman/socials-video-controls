@@ -19,8 +19,16 @@ const SOURCES = {
   captureUrl: () => read('content/capture-url.js'),
   core: () => read('content/core.js'),
   content: () => read('content/content.js'),
-  css: () => read('content/content.css')
+  css: () => read('content/content.css'),
+  userscript: () => read('dist/socials-video-controls.user.js')
 };
+
+// With IGVC_USERSCRIPT=1 the suite exercises the built userscript bundle
+// instead of the loose content/ files. Worth having because the bundle is what
+// gets installed on iOS, and it differs in ways that can break independently:
+// one file, a localStorage shim for chrome.storage, runtime CSS injection
+// subject to the page's CSP, and everything arriving at document-start.
+const USE_USERSCRIPT = process.env.IGVC_USERSCRIPT === '1';
 
 //#region Test registry
 
@@ -69,22 +77,36 @@ function skip(reason) { throw new Skip(reason); }
 // scripts once the document is idle.
 async function loadExtension(page, url, { settleMs = config.settleMs } = {}) {
   await page.clearInitScripts();
-  await page.addInitScript(SOURCES.captureUrl());
-  await page.goto(url, { settleMs });
 
-  await page.eval(`
-    (() => {
-      document.getElementById('__igvc_test_css')?.remove();
-      const style = document.createElement('style');
-      style.id = '__igvc_test_css';
-      style.textContent = ${JSON.stringify(SOURCES.css())};
-      document.head.appendChild(style);
-      return true;
-    })()
-  `, { label: 'inject css' });
-  await page.eval(SOURCES.core(), { label: 'inject core.js' });
-  await page.eval(SOURCES.content(), { label: 'inject content.js' });
-  await sleep(3000);
+  if (USE_USERSCRIPT) {
+    // The bundle is self-contained and defers its own DOM-dependent half, so
+    // it only needs placing before the page's scripts -- which is exactly what
+    // a userscript manager's document-start injection does.
+    if (!fs.existsSync(path.join(ROOT, 'dist/socials-video-controls.user.js'))) {
+      throw new Error('dist/socials-video-controls.user.js is missing; run node tools/build-userscript.js');
+    }
+    await page.addInitScript(SOURCES.userscript());
+    await page.goto(url, { settleMs });
+    await sleep(3000);
+  } else {
+    await page.addInitScript(SOURCES.captureUrl());
+    await page.goto(url, { settleMs });
+
+    await page.eval(`
+      (() => {
+        document.getElementById('__igvc_test_css')?.remove();
+      document.getElementById('igvc-styles')?.remove();
+        const style = document.createElement('style');
+        style.id = '__igvc_test_css';
+        style.textContent = ${JSON.stringify(SOURCES.css())};
+        document.head.appendChild(style);
+        return true;
+      })()
+    `, { label: 'inject css' });
+    await page.eval(SOURCES.core(), { label: 'inject core.js' });
+    await page.eval(SOURCES.content(), { label: 'inject content.js' });
+    await sleep(3000);
+  }
 
   const state = await page.eval(`
     (() => {
@@ -363,7 +385,7 @@ module.exports = {
   describe, it, assert, equal, close, skip, Skip,
   groups,
   loadExtension, teardown,
-  attachToPage, sleep, config,
+  attachToPage, sleep, config, USE_USERSCRIPT,
   hoverVideo, seekGeometry, barState, clickBarControl, clickBarControlReal, setCurrentTime, markLoop,
   openTheaterOverlay, waitForSeekable,
   stubDownloads, savedFilenames,

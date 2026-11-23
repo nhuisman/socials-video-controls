@@ -22,6 +22,8 @@ There is no build step. The files in `content/` are what ships.
 | `service-worker.js` | Settings storage. |
 | `tests/run.js` | Unit suite. No browser. Runs in well under a second. |
 | `tests/browser/` | Browser suite. Drives a real Chrome against real pages. |
+| `tools/build-userscript.js` | Generates the userscript bundle from `content/`. |
+| `dist/socials-video-controls.user.js` | **Generated.** Never edit by hand. |
 
 ## Testing
 
@@ -156,6 +158,35 @@ point of use in `cdp.js` and `harness.js`.
     dispatched click plays and keeps playing. Use `h.clickBarControlReal` for
     anything gated on user activation.
 
+## The userscript bundle
+
+`dist/socials-video-controls.user.js` is the iOS delivery route, since iOS
+cannot load an unpacked extension. It is **generated** from `content/`:
+
+```bash
+node tools/build-userscript.js            # rebuild
+node tools/build-userscript.js --check     # non-zero if the committed copy is stale
+```
+
+**If you change anything in `content/`, rebuild it.** The unit suite runs
+`--check`, so forgetting fails `node tests/run.js` with the command to fix it.
+`--check` compares in memory without writing: building first and then comparing
+would be a check that cannot fail.
+
+Do not hand-maintain a second copy of the logic. The suites only cover
+`content/`, so a forked bundle would be untested code shipped to a device.
+
+To run the browser suite against the bundle rather than the loose files:
+
+```bash
+IGVC_USERSCRIPT=1 node tests/browser/run.js --site=instagram
+```
+
+Worth doing after touching the bundle's own concerns, which can break
+independently of the extension: runtime CSS injection under the page's CSP, the
+`localStorage` storage shim, and everything arriving at `document-start`
+instead of `document_idle`.
+
 ## Rules for changes
 
 - **`core.js` stays DOM-free.** No `document`, no `window`, no browser APIs. It
@@ -175,6 +206,15 @@ point of use in `cdp.js` and `harness.js`.
   browser and write the number into a test or a comment.
 - **Commit messages** follow Conventional Commits. Build and test before
   committing.
+
+## Known flakes
+
+- **`loop in the URL > applies the loop from the URL to the player`** can fail
+  in bundle mode when run directly after other URL-loop tests, then pass three
+  times out of three in isolation. A URL loop is consumed by the first player
+  that can take it, and the bundle initialises earlier than the extension does,
+  so a neighbouring player can claim it first. Re-run in isolation before
+  treating it as a real failure.
 
 ## Known gaps
 
