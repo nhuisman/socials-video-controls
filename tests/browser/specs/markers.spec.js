@@ -283,6 +283,71 @@ module.exports = (site) => {
       await page.key('|');
     });
 
+    h.it('previews the exact frame under the handle, even where fastSeek exists', async (page) => {
+      // Dragging a marker pauses playback and seeks so the picture shows the
+      // frame being set. That used to go through fastSeek where the browser had
+      // one -- an API that is imprecise by specification, landing on a nearby
+      // keyframe. Chromium does not implement it, so this suite always took the
+      // exact path and never saw the problem; WebKit, where fastSeek
+      // originated, took the other one.
+      //
+      // A 2s-keyframe stand-in is installed here so the imprecise branch would
+      // be exercised if it ever came back. Measured against it before the fix:
+      // the preview drifted up to 0.89s from the handle.
+      await h.hoverVideo(page);
+      await requireUsableTrack(page);
+      await page.eval(`
+        (() => {
+          window.__igvcRealFastSeek = HTMLMediaElement.prototype.fastSeek || null;
+          HTMLMediaElement.prototype.fastSeek = function (t) {
+            this.currentTime = Math.round(t / 2) * 2;
+          };
+          return true;
+        })()
+      `, { label: 'install fastSeek stand-in' });
+
+      try {
+        await h.markLoop(page, 20, 30);
+        await h.sleep(600);
+        const geo = await h.seekGeometry(page);
+        const drifts = [];
+        await page.drag(
+          { x: geo.handleB.x, y: geo.track.y },
+          { x: geo.handleB.x - 70, y: geo.track.y },
+          { steps: 8, stepMs: 160, onStep: async () => {
+            const s = await page.eval(h.barExpr(`
+              const head = bar.querySelector('.ig-vc-time').textContent.split(' ')[0];
+              const parts = head.split(':');
+              const want = parts.length === 2 ? Number(parts[0]) * 60 + Number(parts[1]) : null;
+              return { want, got: document.querySelector('video').currentTime, paused: document.querySelector('video').paused };
+            `), { label: 'drift' });
+            if (s.want !== null) drifts.push({ drift: Math.abs(s.want - s.got), paused: s.paused });
+          } }
+        );
+
+        h.assert(drifts.length >= 4, `expected several samples, got ${drifts.length}`);
+        // Playback must stop for the duration of the drag.
+        h.assert(drifts.every((d) => d.paused === true),
+          'the video should be paused while a marker is dragged');
+        // And the picture must sit on the frame the handle names. One frame at
+        // 30fps is 0.033s; a tenth of a second is generous and still an order of
+        // magnitude tighter than keyframe snapping.
+        const worst = Math.max(...drifts.map((d) => d.drift));
+        h.assert(worst < 0.1,
+          `the preview drifted ${worst.toFixed(2)}s from the handle; it must show the frame being set`);
+      } finally {
+        await page.eval(`
+          (() => {
+            if (window.__igvcRealFastSeek) HTMLMediaElement.prototype.fastSeek = window.__igvcRealFastSeek;
+            else delete HTMLMediaElement.prototype.fastSeek;
+            delete window.__igvcRealFastSeek;
+            return true;
+          })()
+        `, { label: 'remove stand-in' }).catch(() => {});
+        await page.key('|');
+      }
+    });
+
     h.it('shows a playhead distinct from the loop span', async (page) => {
       await h.hoverVideo(page);
       await h.markLoop(page, 20, 26);

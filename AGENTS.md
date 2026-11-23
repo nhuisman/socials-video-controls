@@ -152,7 +152,16 @@ point of use in `cdp.js` and `harness.js`.
     nothing. Use `h.openTheaterOverlay`, which retries and waits for layout.
 11. **Recording from an unbuffered position stalls** and looks like a broken
     recorder. Call `h.waitForSeekable` before starting a clip.
-12. **Facebook re-pauses a video that no real gesture started.** A scripted
+12. **Chromium cannot see a `fastSeek` code path.** Chromium does not implement
+    `HTMLMediaElement.fastSeek`, so any `typeof video.fastSeek === 'function'`
+    branch is dead in this suite and live in WebKit, where the API originated.
+    The marker-drag preview went through it and drifted up to 0.89s from the
+    handle, which no test could catch. If you write a branch on a feature
+    Chromium lacks, install a stand-in and test both sides -- see
+    `markers.spec.js` → "previews the exact frame under the handle". More
+    generally: `fastSeek` is imprecise by specification, so never use it
+    anywhere in this project.
+13. **Facebook re-pauses a video that no real gesture started.** A scripted
     `el.click()` on the play button leaves `paused: true`, and a bare
     `video.play()` does the same, so it is the site and not us. A real
     dispatched click plays and keeps playing. Use `h.clickBarControlReal` for

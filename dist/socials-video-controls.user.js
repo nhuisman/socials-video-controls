@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Socials Video Controls
 // @namespace    https://github.com/nhuisman/socials-video-controls
-// @version      1.18.0
+// @version      1.18.1
 // @description  Frame-accurate video navigation, A-B loop practice, clip export and theater mode for Instagram and Facebook.
 // @author       Nathan Huisman
 // @match        *://*.instagram.com/*
@@ -1500,15 +1500,22 @@
           if (decision === 'wait') return;
           dragDirty = false;
           if (decision === 'redundant') return;
-          // fastSeek trades precision for speed, which is the right trade mid-drag.
-          // Firefox implements it; Chrome does not, hence the exact-seek fallback.
-          if (typeof video.fastSeek === 'function') {
-            seekInFlight = true;
-            seekStartedAt = performance.now();
-            video.fastSeek(dragTargetTime);
-          } else {
-            beginSeek(dragTargetTime);
-          }
+          // Always an exact seek, never fastSeek.
+          //
+          // fastSeek is imprecise by specification -- it lands on a nearby keyframe,
+          // and MDN says to assign currentTime when precision matters. Precision is
+          // the entire point here: the whole tool is frame-accurate, and a marker
+          // drag promises that the picture shows the frame being set.
+          //
+          // This was invisible from Chromium, which does not implement fastSeek, so
+          // the suite always took the exact path while WebKit took the other one.
+          // Measured with a 2s-keyframe stand-in: the preview drifted up to 0.89s
+          // from the handle, against 0.01s exact.
+          //
+          // Responsiveness does not depend on it. Seek coalescing already keeps one
+          // seek in flight and aims each at the newest pointer position, which is
+          // what stops a drag backing up behind stale seeks.
+          beginSeek(dragTargetTime);
         };
 
         // Marker positions and visibility, split out so a trim drag can repaint them
