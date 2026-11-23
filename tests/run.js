@@ -808,13 +808,104 @@ group('timeline zoom', () => {
     equal(released.zoomed, false, 'a loop filling its window makes the zoom pointless');
   });
 
-  test('slides rather than shrinks the window at either end', () => {
+  test('slides rather than shrinks the window at the start', () => {
     const atStart = next({ loopIn: 0, loopOut: 1.5 });
     equal(atStart.start, 0, 'cannot start before zero');
     close(atStart.end - atStart.start, 5, 1e-6, 'keeps its width');
+  });
+
+  // Where a time lands on a 150px track, which is what the handles actually do
+  // with the window. Asserting in pixels is the point: the bug being guarded
+  // against is a handle that cannot be grabbed.
+  const BAR_PX = 150;
+  const xOf = (time, view) => core.timeToViewRatio(time, view) * BAR_PX;
+
+  test('leaves grabbable track past B when it is against the end', () => {
+    // The window stops at the media, so without padding B lands exactly on the
+    // right edge of the track with nothing after it.
     const atEnd = next({ loopIn: DUR - 1.5, loopOut: DUR });
-    equal(atEnd.end, DUR, 'cannot end past the duration');
-    close(atEnd.end - atEnd.start, 5, 1e-6, 'keeps its width');
+    assert(atEnd.end > DUR, `window should extend past the media end, got ${atEnd.end}`);
+    close(BAR_PX - xOf(DUR, atEnd), 20, 1e-6, 'leaves 20px of track past the end of the video');
+    assert(atEnd.start >= 0, 'stays inside the media at the left');
+  });
+
+  test('does not squeeze the markers together to make that room', () => {
+    // Widening the window in time was the first attempt and it did exactly
+    // this: the handles went from 45px apart to 11px. The padding must buy
+    // grab room past B without costing room between A and B.
+    const mid = next({ loopIn: 20, loopOut: 21.5 });
+    const midGap = xOf(21.5, mid) - xOf(20, mid);
+    const atEnd = next({ loopIn: DUR - 1.5, loopOut: DUR });
+    const endGap = xOf(DUR, atEnd) - xOf(DUR - 1.5, atEnd);
+    assert(endGap > midGap * 0.75,
+      `markers at the end are ${endGap.toFixed(1)}px apart against ${midGap.toFixed(1)}px mid-video`);
+  });
+
+  test('leaves a loop clear of the end on the normal zoom', () => {
+    // Just outside the guard: an ordinary loop, which must not be padded.
+    const clear = next({ loopIn: DUR - 12, loopOut: DUR - 10.5 });
+    close(clear.end - clear.start, 5, 1e-6, 'ordinary loops keep the tight window');
+    assert(clear.end <= DUR + 1e-9, 'and do not reach past the media');
+  });
+
+  test('re-pads a held window once B reaches the end', () => {
+    // A window established while the loop was mid-video stops at the media, so
+    // it must be recomputed rather than held.
+    const mid = next({ loopIn: 20, loopOut: 21.5 });
+    close(mid.end - mid.start, 5, 1e-6, 'starts tight');
+    assert(mid.end <= DUR + 1e-9, 'and unpadded');
+    const moved = next({ current: mid, loopIn: DUR - 1.4, loopOut: DUR });
+    assert(moved.end > DUR, 'reopens with padding once B is at the end');
+    close(BAR_PX - xOf(DUR, moved), 20, 1e-6, 'and lands the padding at 20px');
+  });
+
+  test('pads the end of a video shorter than the window too', () => {
+    const tiny = next({ loopIn: 6.5, loopOut: 8, duration: 8 });
+    assert(tiny.end > 8, 'a short video still needs room past B');
+    close(BAR_PX - xOf(8, tiny), 20, 1e-6, 'with the same 20px of track');
+    // A 5s window on an 8s video is still a zoom; the padding past the end
+    // must not change that verdict either way.
+    equal(tiny.zoomed, true, 'a 5s window on an 8s video is a zoom');
+  });
+
+  test('settles on a padded window instead of recomputing forever', () => {
+    // The padding made the window wider than the zoom cap, so a padded window
+    // could never report itself as capped: a tight loop at the end recomputed
+    // on every call and the timeline appeared to stick. Feeding the result back
+    // in must reach a fixed point.
+    let view = next({ loopIn: DUR - 0.4, loopOut: DUR });
+    const first = view;
+    for (let i = 0; i < 10; i++) {
+      view = next({ current: view, loopIn: DUR - 0.4, loopOut: DUR });
+    }
+    close(view.start, first.start, 1e-9, 'window start settled');
+    close(view.end, first.end, 1e-9, 'window end settled');
+    assert(view.end > DUR, 'and kept its room past the end');
+  });
+
+  test('drops end padding once the loop moves back into the video', () => {
+    const atEnd = next({ loopIn: DUR - 1.5, loopOut: DUR });
+    assert(atEnd.padSeconds > 0, 'padded at the end');
+    // Same window, but the loop is now clear of the end: the blank track past
+    // the media has stopped being earned.
+    const moved = next({ current: atEnd, loopIn: DUR - 12, loopOut: DUR - 10.5 });
+    close(moved.padSeconds, 0, 1e-9, 'padding dropped');
+    assert(moved.end <= DUR + 1e-9, 'window back inside the media');
+  });
+
+  test('reports its end padding so callers can tell dead space from width', () => {
+    const plain = next({ loopIn: 20, loopOut: 21.5 });
+    close(plain.padSeconds, 0, 1e-9, 'an ordinary window has none');
+    const padded = next({ loopIn: DUR - 1.5, loopOut: DUR });
+    close(padded.end - padded.start - padded.padSeconds, 5, 1e-6,
+      'width minus padding is the ordinary window width');
+  });
+
+  test('skips padding when the bar is narrower than the padding itself', () => {
+    // Nothing sensible to do with 20px of padding on a 12px bar; better to
+    // leave the window alone than to produce a degenerate one.
+    const narrow = next({ loopIn: DUR - 1.5, loopOut: DUR, barWidthPx: 12 });
+    assert(narrow.end <= DUR + 1e-9, 'no padding on an unusably narrow bar');
   });
 
   test('never produces a window wider than the video', () => {

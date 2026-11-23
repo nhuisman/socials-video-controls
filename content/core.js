@@ -132,9 +132,27 @@
     maxFraction = 0.9,
     targetFraction = 0.5,
     minWindowSeconds = 5,
+    // A loop butted up against the end of the video has no room to its right:
+    // the window stops at the media, so B lands exactly on the track's right
+    // edge with nothing after it and cannot be grabbed. When B is within
+    // endGuardSeconds of the end, the window is extended past the end of the
+    // video by enough to leave endPaddingPx of empty track beyond it -- the
+    // post-roll a clip trimmer leaves for the same reason.
+    //
+    // Widening the window in TIME instead was tried and is wrong: it pulls the
+    // markers closer together (measured: 45px apart to 11px on a 150px track)
+    // and still leaves B on the edge, because the window end is still the
+    // media end.
+    endGuardSeconds = 1,
+    endPaddingPx = 20,
     disabled = false
   }) => {
-    const full = { start: 0, end: Number.isFinite(duration) && duration > 0 ? duration : 0, zoomed: false };
+    const full = {
+      start: 0,
+      end: Number.isFinite(duration) && duration > 0 ? duration : 0,
+      zoomed: false,
+      padSeconds: 0
+    };
     if (disabled || !Number.isFinite(duration) || duration <= 0) return full;
     if (!Number.isFinite(loopIn) || !Number.isFinite(loopOut)) return full;
     // An unlaid-out bar has no meaningful pixel width; keep whatever is in use
@@ -147,6 +165,16 @@
     if (span <= 0) return full;
 
     const fractionOf = (windowWidth) => (windowWidth > 0 ? span / windowWidth : 0);
+    // True when the loop sits so close to the end that the window cannot show
+    // anything to its right.
+    const nearEnd = duration - b < endGuardSeconds;
+    // Seconds of window that render as endPaddingPx of track, given a window
+    // whose own width includes that padding.
+    const padFor = (unpaddedWidth) => {
+      if (!nearEnd || !(barWidthPx > endPaddingPx) || !(unpaddedWidth > 0)) return 0;
+      const share = endPaddingPx / barWidthPx;
+      return (unpaddedWidth * share) / (1 - share);
+    };
     // Zoom in only when the loop is both a small share of the bar and narrow in
     // absolute terms, so a very wide bar is left alone.
     const wantsMoreZoom = (windowWidth) => {
@@ -157,12 +185,25 @@
     if (current && current.end > current.start) {
       const insideWindow = a >= current.start && b <= current.end;
       if (insideWindow) {
-        const windowWidth = current.end - current.start;
+        // End padding is dead space past the media, so every judgement below is
+        // made on the width that actually carries video. Measuring the padded
+        // width instead meant a padded window could never satisfy the zoom cap
+        // -- 5.77s against a 5s cap -- so a tight loop recomputed on every
+        // single call and the timeline never settled.
+        const pad = Number.isFinite(current.padSeconds) ? current.padSeconds : 0;
+        const windowWidth = (current.end - current.start) - pad;
+        if (windowWidth <= 0) return full;
         // The loop now fills the window, so the zoom is doing nothing.
         if (fractionOf(windowWidth) > maxFraction) return full;
+        // A window established before B reached the end stops at the media, so
+        // it has no room past B and must be recomputed rather than kept.
+        const needsEndRoom = nearEnd && pad <= 0;
+        // Padding that is no longer earned must go, or the timeline keeps
+        // showing blank track past a loop that has moved back into the video.
+        const staleEndRoom = !nearEnd && pad > 0;
         // Already comfortable, or as far in as the zoom cap allows: hold it.
         const atZoomCap = windowWidth <= minWindowSeconds + 1e-9;
-        if (!wantsMoreZoom(windowWidth) || atZoomCap) return current;
+        if (!needsEndRoom && !staleEndRoom && (!wantsMoreZoom(windowWidth) || atZoomCap)) return current;
       }
     } else if (!wantsMoreZoom(duration)) {
       return full;
@@ -184,7 +225,14 @@
       start = Math.max(0, duration - width);
     }
     if (end - start <= 0) return full;
-    return { start, end, zoomed: end - start < duration - 1e-9 };
+    // Whether this is a zoom is decided before padding, so a padded window at
+    // the end of a short video does not start claiming to be zoomed.
+    const zoomed = end - start < duration - 1e-9;
+    // Leave grabbable track past the media end when B is up against it. The
+    // amount is carried on the view so the stickiness checks above can tell
+    // dead space apart from window width.
+    const padSeconds = padFor(end - start);
+    return { start, end: end + padSeconds, zoomed, padSeconds };
   };
 
   // Position within the current view, 0..1. Out-of-window times clamp to an
