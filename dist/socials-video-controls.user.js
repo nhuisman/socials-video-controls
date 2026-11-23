@@ -76,7 +76,7 @@
     scope.chrome.storage.local = local;
   })();
 
-  const STYLES = "/* Clip slide-up control bar to the video frame */\n.ig-vc-player {\n  overflow: hidden;\n}\n\n/* Keep Instagram's overlay full-height and hide its native mute button */\n.ig-vc-player [role=\"group\"][aria-label=\"Video player\"] {\n  bottom: 0 !important;\n  height: 100% !important;\n}\n\n.ig-vc-player [role=\"slider\"][aria-label=\"Adjust volume\"],\n.ig-vc-player [aria-label=\"Toggle audio\"] {\n  display: none !important;\n}\n\n/* Smoothly slide Tagged Users (Feed), bottom caption (Reels) & Watch This Series up when control bar is visible */\n.ig-vc-player [role=\"group\"][aria-label=\"Video player\"] [role=\"button\"] > div:has(> .html-div) {\n  overflow: visible !important;\n}\n\n.ig-vc-player [role=\"group\"][aria-label=\"Video player\"] > div:has(button):not(:has([role=\"button\"])),\n.ig-vc-player [role=\"group\"][aria-label=\"Video player\"] [role=\"button\"] > div > .html-div > .html-div,\n.ig-vc-series-overlay {\n  transition: transform 0.18s ease !important;\n}\n\n.ig-vc-player:is(:hover:not(:fullscreen.idle), .dragging, .ig-vc-kb),\n.ig-vc-host:has(.ig-vc-series-overlay:hover) .ig-vc-player:not(:fullscreen.idle) {\n  & .ig-vc-bar {\n    pointer-events: auto;\n    opacity: 1;\n    transform: translateY(0);\n  }\n\n  & [role=\"group\"][aria-label=\"Video player\"] > div:has(button):not(:has([role=\"button\"])),\n  & [role=\"group\"][aria-label=\"Video player\"] [role=\"button\"] > div > .html-div > .html-div {\n    transform: translateY(-28px) !important;\n  }\n}\n\n.ig-vc-host:has(.ig-vc-player:is(:hover:not(:fullscreen.idle), .dragging)) .ig-vc-series-overlay,\n.ig-vc-series-overlay:hover {\n  transform: translateY(-28px) !important;\n}\n\n/* Fullscreen layout & idle cursor hiding */\n.ig-vc-player:fullscreen {\n  background: #000 !important;\n  display: flex !important;\n  align-items: center !important;\n  justify-content: center !important;\n}\n\n.ig-vc-player:fullscreen.idle:not(.dragging, .ig-vc-kb) {\n  cursor: none !important;\n}\n\n.ig-vc-player:fullscreen video {\n  width: 100vw !important;\n  height: 100vh !important;\n  max-height: 100vh !important;\n  object-fit: contain !important;\n}\n\n/* Flush bottom vignette control bar */\n.ig-vc-bar {\n  position: absolute;\n  inset: auto 0 0 0;\n  z-index: 2147483647;\n  height: 28px;\n  padding: 0 8px;\n  box-sizing: border-box;\n  display: flex;\n  align-items: center;\n  gap: 6px;\n  background: linear-gradient(to top, rgba(0, 0, 0, 0.42), rgba(0, 0, 0, 0.16) 60%, transparent);\n  color: #fff;\n  font: 400 11px/1 -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif;\n  font-variant-numeric: tabular-nums;\n  user-select: none;\n  touch-action: none;\n  pointer-events: none;\n  opacity: 0;\n  transform: translateY(28px);\n  transition: opacity 0.18s ease, transform 0.18s ease;\n}\n\n/* The site's own control, hidden because ours occupies the same place. Applied\n   from JS, since these elements are found structurally rather than by any\n   selector that could live here. */\n.ig-vc-native-hidden {\n  display: none !important;\n}\n\n/* Augment mode: a stripped bar pinned to the top-left for a site that already\n   has a full player of its own. No site uses this now that Facebook runs in\n   replace mode; it is kept because the mode is one field in the adapter and\n   removing it would mean unpicking the augmenting branches in sync(),\n   stopLoopWatcher() and endScrub() in the same change as a behaviour switch.\n\n   It suppresses everything except the frame readout and the loop controls,\n   looping being the point of the tool on a dance video. */\n.ig-vc-bar.ig-vc-augment {\n  inset: 0 auto auto 0;\n  height: auto;\n  width: auto;\n  padding: 4px 7px;\n  gap: 6px;\n  border-radius: 0 0 6px 0;\n  background: rgba(0, 0, 0, 0.55);\n  transform: translateY(-100%);\n}\n\n.ig-vc-bar.ig-vc-augment > :not(.ig-vc-time, .ig-vc-seek, .ig-vc-loop-wrap, .ig-vc-loop-restart) {\n  display: none !important;\n}\n\n/* A compact trim timeline, not a replacement for Facebook's progress bar: it\n   exists to carry the loop handles, which their player has no equivalent for. */\n.ig-vc-bar.ig-vc-augment .ig-vc-seek {\n  flex: 0 0 150px;\n  width: 150px;\n}\n\n.ig-vc-player:is(:hover:not(:fullscreen.idle), .dragging, .ig-vc-kb) .ig-vc-bar.ig-vc-augment {\n  transform: translateY(0);\n}\n\n/* Current position. The fill's leading edge was indistinguishable against the\n   loop span, so the playhead is its own high-contrast marker with a dark\n   outline that reads against white fill, blue span and bare track alike. */\n.ig-vc-playhead {\n  position: absolute;\n  top: 50%;\n  left: var(--v, 0%);\n  width: 2px;\n  height: 16px;\n  margin-left: -1px;\n  transform: translateY(-50%);\n  background: #fff;\n  border-radius: 1px;\n  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.75), 0 0 3px rgba(0, 0, 0, 0.5);\n  pointer-events: none;\n  z-index: 1;\n}\n\n.ig-vc-player:fullscreen .ig-vc-playhead {\n  height: 20px;\n}\n\n/* Hotkey hint, floated above the bar during a drag. Absolutely positioned so it\n   cannot affect the bar's layout, which has no spare width. */\n.ig-vc-hint {\n  position: absolute;\n  bottom: calc(100% + 6px);\n  left: 50%;\n  transform: translateX(-50%);\n  padding: 3px 7px;\n  border-radius: 4px;\n  background: rgba(0, 0, 0, 0.78);\n  color: #fff;\n  font-size: 10px;\n  line-height: 1.45;\n  /* Multi-line: marker times on the first line, the hotkey hint below. */\n  white-space: pre-line;\n  text-align: center;\n  font-variant-numeric: tabular-nums;\n  pointer-events: none;\n  opacity: 0;\n  transition: opacity 0.12s ease;\n  z-index: 3;\n}\n\n.ig-vc-hint.visible {\n  opacity: 1;\n}\n\n/* Trim handles. Children of .ig-vc-seek rather than .ig-vc-track, because the\n   track clips its overflow and would cut them off. */\n.ig-vc-handle {\n  display: none;\n  position: absolute;\n  top: 50%;\n  width: 9px;\n  height: 14px;\n  margin-left: -4.5px;\n  transform: translateY(-50%);\n  box-sizing: border-box;\n  border-radius: 2px;\n  background: rgb(120, 200, 255);\n  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);\n  cursor: ew-resize;\n  touch-action: none;\n  z-index: 2;\n  transition: height 0.12s ease;\n}\n\n.ig-vc-seek.has-a .ig-vc-handle-a {\n  display: block;\n  left: var(--la, 0%);\n}\n\n.ig-vc-seek.has-b .ig-vc-handle-b {\n  display: block;\n  left: var(--lb, 0%);\n}\n\n.ig-vc-handle:hover,\n.ig-vc-handle:active {\n  height: 18px;\n  background: #fff;\n}\n\n/* A-B loop span, drawn above the buffered range and below the playback fill */\n.ig-vc-seek.has-loop .ig-vc-loop-span {\n  display: block;\n}\n\n.ig-vc-loop-span {\n  display: none;\n  position: absolute;\n  bottom: 0;\n  left: var(--la, 0%);\n  width: max(2px, calc(var(--lb, 0%) - var(--la, 0%)));\n  height: 100%;\n  background: rgba(120, 200, 255, 0.55);\n  border-radius: 99px;\n}\n\n/* A zoomed timeline shows a slice of the video, not the whole of it, so the\n   track is marked to make that obvious rather than silently misleading. */\n.ig-vc-seek.zoomed .ig-vc-track {\n  background: rgba(120, 200, 255, 0.22);\n  box-shadow: inset 1px 0 0 rgba(120, 200, 255, 0.8), inset -1px 0 0 rgba(120, 200, 255, 0.8);\n}\n\n/* Loop controls: the toggle carries state and the rest live in a popup, so the\n   bar keeps enough slack for the cache and fullscreen buttons on a narrow\n   player. Jump-back stays out on the bar because a practice loop uses it most. */\n.ig-vc-loop-box {\n  width: auto;\n  padding: 3px;\n  gap: 1px;\n}\n\n/* Divides the loop speeds from the loop actions in the same popup */\n.ig-vc-loop-sep {\n  width: 100%;\n  height: 1px;\n  margin: 2px 0;\n  background: rgba(255, 255, 255, 0.2);\n}\n\n.ig-vc-loop-speed {\n  font-variant-numeric: tabular-nums;\n}\n\n.ig-vc-loop-in.active,\n.ig-vc-loop-out.active {\n  background: rgba(120, 200, 255, 0.3);\n  color: rgb(170, 220, 255);\n}\n\n.ig-vc-loop-toggle,\n.ig-vc-loop-restart {\n  width: 20px;\n}\n\n.ig-vc-loop-toggle.active {\n  opacity: 1;\n  color: rgb(120, 200, 255);\n}\n\n.ig-vc-loop-toggle.unavailable,\n.ig-vc-loop-restart.unavailable {\n  opacity: 0.35;\n}\n\n/* Hidden rather than disabled, for a control that is meaningless until a loop\n   exists: an unexplained greyed button is worse than no button. */\n.ig-vc-hidden {\n  display: none !important;\n}\n\n/* A bar button widened to carry short text instead of an icon: clip recording\n   progress previously, and now the loop link's ok/err feedback. */\n.ig-vc-btn.ig-vc-clip-text {\n  width: 30px;\n  font-size: 10px;\n  text-align: center;\n  font-variant-numeric: tabular-nums;\n  text-box: trim-both cap alphabetic;\n}\n\n/* Clip export lives in the loop menu now, where it is an option like the rest. */\n.ig-vc-opt.ig-vc-clip.active {\n  opacity: 1;\n  color: rgb(255, 120, 120);\n}\n\n.ig-vc-opt.ig-vc-clip.unavailable,\n.ig-vc-opt.ig-vc-loop-speed.unavailable {\n  opacity: 0.4;\n}\n\n/* Theater mode: covers the page so only the video is visible, deliberately\n   without entering browser fullscreen, so tabs and the address bar stay put. */\n.ig-vc-theater {\n  position: fixed;\n  inset: 0;\n  z-index: 2147483647;\n  background: rgba(0, 0, 0, 0.94);\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  justify-content: center;\n  gap: 10px;\n  padding: 14px;\n  box-sizing: border-box;\n}\n\n/* The stage takes every row the top bar leaves, which is what gives the player\n   below a definite height to scale against. Without `flex: 1` the stage height\n   is content-based, so a percentage height inside it resolves to nothing and\n   the video is stuck at its intrinsic size in the middle of a black screen. */\n.ig-vc-theater-stage {\n  flex: 1 1 auto;\n  width: 100%;\n  min-height: 0;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n}\n\n.ig-vc-theater-video {\n  width: 100%;\n  height: 100%;\n  min-height: 0;\n  object-fit: contain;\n  background: #000;\n  border-radius: 4px;\n}\n\n/* An adopted player keeps its own bar, so the loop controls stay usable here.\n   It is sized to fill the stage's height, with `aspect-ratio` set from the\n   video's own dimensions when the overlay opens. That keeps the box exactly as\n   wide as the picture, so the bar pinned to its bottom edge lines up with the\n   video instead of spanning the whole screen -- and, more importantly, stays\n   inside the viewport. An intrinsically sized box taller than the window put\n   the bar below the fold, which is why the controls could not be reached. */\n.ig-vc-theater-adopted {\n  height: 100% !important;\n  width: auto !important;\n  max-width: 100% !important;\n  max-height: 100% !important;\n  margin: 0 !important;\n  padding: 0 !important;\n}\n\n.ig-vc-theater-adopted video {\n  width: 100% !important;\n  height: 100% !important;\n  max-width: none !important;\n  max-height: none !important;\n  object-fit: contain !important;\n}\n\n/* In theater mode the overlay is the whole screen, so revealing the bar only\n   when the pointer is inside the video box makes it feel broken on a portrait\n   video with wide letterboxing. Any pointer movement over the overlay counts. */\n.ig-vc-theater:hover .ig-vc-theater-adopted .ig-vc-bar {\n  pointer-events: auto;\n  opacity: 1;\n  transform: translateY(0);\n}\n\n.ig-vc-theater-bar {\n  width: 100%;\n  flex: 0 0 auto;\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 12px;\n  color: rgba(255, 255, 255, 0.85);\n  font: 400 11px/1.4 -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif;\n}\n\n.ig-vc-theater-label {\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n.ig-vc-theater-actions {\n  display: inline-flex;\n  gap: 6px;\n  flex-shrink: 0;\n}\n\n.ig-vc-theater-bar button {\n  all: unset;\n  padding: 4px 10px;\n  border-radius: 4px;\n  background: rgba(255, 255, 255, 0.14);\n  color: #fff;\n  font: inherit;\n  cursor: pointer;\n}\n\n.ig-vc-theater-bar button:hover {\n  background: rgba(255, 255, 255, 0.26);\n}\n\n/* Buttons & thin Lucide icons */\n.ig-vc-btn {\n  all: unset;\n  width: 22px;\n  height: 22px;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  color: #fff;\n  cursor: pointer;\n  flex-shrink: 0;\n  opacity: 0.9;\n}\n\n.ig-vc-btn:hover {\n  opacity: 1;\n}\n\n.ig-vc-btn svg {\n  width: 16px;\n  height: 16px;\n  fill: none;\n  stroke: currentColor;\n  stroke-width: 1.5;\n  stroke-linecap: round;\n  stroke-linejoin: round;\n  pointer-events: none;\n}\n\n.ig-vc-time {\n  color: rgba(255, 255, 255, 0.9);\n  white-space: nowrap;\n  /* Shrinks only after the seek bar has reached its minimum, so on a very\n     narrow player the readout truncates instead of pushing the buttons on the\n     right out of view. A clipped timestamp is a better failure than a missing\n     fullscreen control. */\n  flex-shrink: 1;\n  min-width: 0;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  text-box: trim-both cap alphabetic;\n}\n\n/* Sliders (Horizontal Seek & Vertical Volume) */\n.ig-vc-seek {\n  flex: 1;\n  min-width: 48px;\n  height: 18px;\n  position: relative;\n  display: flex;\n  align-items: center;\n  cursor: pointer;\n  touch-action: none;\n}\n\n.ig-vc-track {\n  position: relative;\n  width: 100%;\n  height: 2px;\n  background: rgba(255, 255, 255, 0.34);\n  border-radius: 99px;\n  overflow: hidden;\n  transition: height 0.12s ease, width 0.12s ease;\n}\n\n.ig-vc-seek:hover .ig-vc-track {\n  height: 4px;\n}\n\n/* Downloaded range, drawn behind the playback fill so stepping ahead of the\n   buffer is visible rather than just feeling slow */\n.ig-vc-buffer {\n  position: absolute;\n  left: 0;\n  bottom: 0;\n  width: var(--b, 0%);\n  height: 100%;\n  background: rgba(255, 255, 255, 0.28);\n  border-radius: 99px;\n}\n\n.ig-vc-fill {\n  position: absolute;\n  left: 0;\n  bottom: 0;\n  width: var(--v, 0%);\n  height: 100%;\n  background: rgba(255, 255, 255, 0.9);\n  border-radius: 99px;\n}\n\n.ig-vc-seek:hover .ig-vc-fill,\n.ig-vc-vol:hover .ig-vc-fill {\n  background: #fff;\n}\n\n/* Hover Popups (Volume & Speed) */\n.ig-vc-wrap {\n  position: relative;\n  display: inline-flex;\n  align-items: center;\n  flex-shrink: 0;\n}\n\n.ig-vc-popup {\n  position: absolute;\n  bottom: 100%;\n  left: 50%;\n  transform: translateX(-50%);\n  padding-bottom: 6px;\n  display: none;\n}\n\n.ig-vc-wrap:is(:hover, .dragging) .ig-vc-popup {\n  display: block;\n}\n\n.ig-vc-box {\n  width: 22px;\n  box-sizing: border-box;\n  background: rgba(0, 0, 0, 0.5);\n  border-radius: 5px;\n  padding: 0;\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n}\n\n.ig-vc-vol {\n  width: 100%;\n  height: 64px;\n  padding: 6px 0;\n  display: flex;\n  justify-content: center;\n  cursor: pointer;\n  touch-action: none;\n}\n\n.ig-vc-vol .ig-vc-track {\n  width: 2px;\n  height: 100%;\n}\n\n.ig-vc-vol:hover .ig-vc-track {\n  width: 4px;\n}\n\n.ig-vc-vol .ig-vc-fill {\n  width: 100%;\n  height: var(--v, 100%);\n}\n\n/* Speed Button & Vertical List */\n.ig-vc-speed-btn {\n  width: 28px;\n  text-align: center;\n  font-size: 11px;\n  font-weight: 400;\n  text-box: trim-both cap alphabetic;\n}\n\n.ig-vc-speed-box {\n  width: auto;\n  padding: 3px;\n  gap: 1px;\n}\n\n.ig-vc-opt {\n  all: unset;\n  box-sizing: border-box;\n  width: 100%;\n  padding: 3px 6px;\n  font-size: 10px;\n  font-weight: 400;\n  color: rgba(255, 255, 255, 0.72);\n  text-align: center;\n  border-radius: 3px;\n  cursor: pointer;\n}\n\n.ig-vc-opt:hover {\n  background: rgba(255, 255, 255, 0.14);\n  color: #fff;\n}\n\n.ig-vc-opt.active {\n  background: rgba(255, 255, 255, 0.24);\n  color: #fff;\n}\n";
+  const STYLES = "/* Clip slide-up control bar to the video frame */\n.ig-vc-player {\n  overflow: hidden;\n}\n\n/* Keep Instagram's overlay full-height and hide its native mute button */\n.ig-vc-player [role=\"group\"][aria-label=\"Video player\"] {\n  bottom: 0 !important;\n  height: 100% !important;\n}\n\n.ig-vc-player [role=\"slider\"][aria-label=\"Adjust volume\"],\n.ig-vc-player [aria-label=\"Toggle audio\"] {\n  display: none !important;\n}\n\n/* Smoothly slide Tagged Users (Feed), bottom caption (Reels) & Watch This Series up when control bar is visible */\n.ig-vc-player [role=\"group\"][aria-label=\"Video player\"] [role=\"button\"] > div:has(> .html-div) {\n  overflow: visible !important;\n}\n\n.ig-vc-player [role=\"group\"][aria-label=\"Video player\"] > div:has(button):not(:has([role=\"button\"])),\n.ig-vc-player [role=\"group\"][aria-label=\"Video player\"] [role=\"button\"] > div > .html-div > .html-div,\n.ig-vc-series-overlay {\n  transition: transform 0.18s ease !important;\n}\n\n.ig-vc-player:is(:hover:not(:fullscreen.idle), .dragging, .ig-vc-kb),\n.ig-vc-host:has(.ig-vc-series-overlay:hover) .ig-vc-player:not(:fullscreen.idle) {\n  & .ig-vc-bar {\n    pointer-events: auto;\n    opacity: 1;\n    transform: translateY(0);\n  }\n\n  & [role=\"group\"][aria-label=\"Video player\"] > div:has(button):not(:has([role=\"button\"])),\n  & [role=\"group\"][aria-label=\"Video player\"] [role=\"button\"] > div > .html-div > .html-div {\n    transform: translateY(-28px) !important;\n  }\n}\n\n.ig-vc-host:has(.ig-vc-player:is(:hover:not(:fullscreen.idle), .dragging)) .ig-vc-series-overlay,\n.ig-vc-series-overlay:hover {\n  transform: translateY(-28px) !important;\n}\n\n/* Fullscreen layout & idle cursor hiding */\n.ig-vc-player:fullscreen {\n  background: #000 !important;\n  display: flex !important;\n  align-items: center !important;\n  justify-content: center !important;\n}\n\n.ig-vc-player:fullscreen.idle:not(.dragging, .ig-vc-kb) {\n  cursor: none !important;\n}\n\n.ig-vc-player:fullscreen video {\n  width: 100vw !important;\n  height: 100vh !important;\n  max-height: 100vh !important;\n  object-fit: contain !important;\n}\n\n/* Flush bottom vignette control bar */\n.ig-vc-bar {\n  position: absolute;\n  inset: auto 0 0 0;\n  z-index: 2147483647;\n  height: 28px;\n  padding: 0 8px;\n  box-sizing: border-box;\n  display: flex;\n  align-items: center;\n  gap: 6px;\n  background: linear-gradient(to top, rgba(0, 0, 0, 0.42), rgba(0, 0, 0, 0.16) 60%, transparent);\n  color: #fff;\n  font: 400 11px/1 -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif;\n  font-variant-numeric: tabular-nums;\n  user-select: none;\n  touch-action: none;\n  pointer-events: none;\n  opacity: 0;\n  transform: translateY(28px);\n  transition: opacity 0.18s ease, transform 0.18s ease;\n}\n\n/* The site's own control, hidden because ours occupies the same place. Applied\n   from JS, since these elements are found structurally rather than by any\n   selector that could live here. */\n.ig-vc-native-hidden {\n  display: none !important;\n}\n\n/* Augment mode: a stripped bar pinned to the top-left for a site that already\n   has a full player of its own. No site uses this now that Facebook runs in\n   replace mode; it is kept because the mode is one field in the adapter and\n   removing it would mean unpicking the augmenting branches in sync(),\n   stopLoopWatcher() and endScrub() in the same change as a behaviour switch.\n\n   It suppresses everything except the frame readout and the loop controls,\n   looping being the point of the tool on a dance video. */\n.ig-vc-bar.ig-vc-augment {\n  inset: 0 auto auto 0;\n  height: auto;\n  width: auto;\n  padding: 4px 7px;\n  gap: 6px;\n  border-radius: 0 0 6px 0;\n  background: rgba(0, 0, 0, 0.55);\n  transform: translateY(-100%);\n}\n\n.ig-vc-bar.ig-vc-augment > :not(.ig-vc-time, .ig-vc-seek, .ig-vc-loop-wrap, .ig-vc-loop-restart) {\n  display: none !important;\n}\n\n/* A compact trim timeline, not a replacement for Facebook's progress bar: it\n   exists to carry the loop handles, which their player has no equivalent for. */\n.ig-vc-bar.ig-vc-augment .ig-vc-seek {\n  flex: 0 0 150px;\n  width: 150px;\n}\n\n.ig-vc-player:is(:hover:not(:fullscreen.idle), .dragging, .ig-vc-kb) .ig-vc-bar.ig-vc-augment {\n  transform: translateY(0);\n}\n\n/* Current position. The fill's leading edge was indistinguishable against the\n   loop span, so the playhead is its own high-contrast marker with a dark\n   outline that reads against white fill, blue span and bare track alike. */\n.ig-vc-playhead {\n  position: absolute;\n  top: 50%;\n  left: var(--v, 0%);\n  width: 2px;\n  height: 16px;\n  margin-left: -1px;\n  transform: translateY(-50%);\n  background: #fff;\n  border-radius: 1px;\n  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.75), 0 0 3px rgba(0, 0, 0, 0.5);\n  pointer-events: none;\n  z-index: 1;\n}\n\n.ig-vc-player:fullscreen .ig-vc-playhead {\n  height: 20px;\n}\n\n/* Hotkey hint, floated above the bar during a drag. Absolutely positioned so it\n   cannot affect the bar's layout, which has no spare width. */\n.ig-vc-hint {\n  position: absolute;\n  bottom: calc(100% + 6px);\n  left: 50%;\n  transform: translateX(-50%);\n  padding: 3px 7px;\n  border-radius: 4px;\n  background: rgba(0, 0, 0, 0.78);\n  color: #fff;\n  font-size: 10px;\n  line-height: 1.45;\n  /* Multi-line: marker times on the first line, the hotkey hint below. */\n  white-space: pre-line;\n  text-align: center;\n  font-variant-numeric: tabular-nums;\n  pointer-events: none;\n  opacity: 0;\n  transition: opacity 0.12s ease;\n  z-index: 3;\n}\n\n.ig-vc-hint.visible {\n  opacity: 1;\n}\n\n/* Trim handles. Children of .ig-vc-seek rather than .ig-vc-track, because the\n   track clips its overflow and would cut them off. */\n.ig-vc-handle {\n  display: none;\n  position: absolute;\n  top: 50%;\n  width: 9px;\n  height: 14px;\n  margin-left: -4.5px;\n  transform: translateY(-50%);\n  box-sizing: border-box;\n  border-radius: 2px;\n  background: rgb(120, 200, 255);\n  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);\n  cursor: ew-resize;\n  touch-action: none;\n  z-index: 2;\n  transition: height 0.12s ease;\n}\n\n.ig-vc-seek.has-a .ig-vc-handle-a {\n  display: block;\n  left: var(--la, 0%);\n}\n\n.ig-vc-seek.has-b .ig-vc-handle-b {\n  display: block;\n  left: var(--lb, 0%);\n}\n\n.ig-vc-handle:hover,\n.ig-vc-handle:active {\n  height: 18px;\n  background: #fff;\n}\n\n/* A-B loop span, drawn above the buffered range and below the playback fill */\n.ig-vc-seek.has-loop .ig-vc-loop-span {\n  display: block;\n}\n\n.ig-vc-loop-span {\n  display: none;\n  position: absolute;\n  bottom: 0;\n  left: var(--la, 0%);\n  width: max(2px, calc(var(--lb, 0%) - var(--la, 0%)));\n  height: 100%;\n  background: rgba(120, 200, 255, 0.55);\n  border-radius: 99px;\n}\n\n/* A zoomed timeline shows a slice of the video, not the whole of it, so the\n   track is marked to make that obvious rather than silently misleading. */\n.ig-vc-seek.zoomed .ig-vc-track {\n  background: rgba(120, 200, 255, 0.22);\n  box-shadow: inset 1px 0 0 rgba(120, 200, 255, 0.8), inset -1px 0 0 rgba(120, 200, 255, 0.8);\n}\n\n/* Loop controls: the toggle carries state and the rest live in a popup, so the\n   bar keeps enough slack for the cache and fullscreen buttons on a narrow\n   player. Jump-back stays out on the bar because a practice loop uses it most. */\n.ig-vc-loop-box {\n  width: auto;\n  padding: 3px;\n  gap: 1px;\n}\n\n/* Divides the loop speeds from the loop actions in the same popup */\n.ig-vc-loop-sep {\n  width: 100%;\n  height: 1px;\n  margin: 2px 0;\n  background: rgba(255, 255, 255, 0.2);\n}\n\n.ig-vc-loop-speed {\n  font-variant-numeric: tabular-nums;\n}\n\n.ig-vc-loop-in.active,\n.ig-vc-loop-out.active {\n  background: rgba(120, 200, 255, 0.3);\n  color: rgb(170, 220, 255);\n}\n\n.ig-vc-loop-toggle,\n.ig-vc-loop-restart {\n  width: 20px;\n}\n\n.ig-vc-loop-toggle.active {\n  opacity: 1;\n  color: rgb(120, 200, 255);\n}\n\n.ig-vc-loop-toggle.unavailable,\n.ig-vc-loop-restart.unavailable {\n  opacity: 0.35;\n}\n\n/* Hidden rather than disabled, for a control that is meaningless until a loop\n   exists: an unexplained greyed button is worse than no button. */\n.ig-vc-hidden {\n  display: none !important;\n}\n\n/* A bar button widened to carry short text instead of an icon: clip recording\n   progress previously, and now the loop link's ok/err feedback. */\n.ig-vc-btn.ig-vc-clip-text {\n  width: 30px;\n  font-size: 10px;\n  text-align: center;\n  font-variant-numeric: tabular-nums;\n  text-box: trim-both cap alphabetic;\n}\n\n/* Clip export lives in the loop menu now, where it is an option like the rest. */\n.ig-vc-opt.ig-vc-clip.active {\n  opacity: 1;\n  color: rgb(255, 120, 120);\n}\n\n.ig-vc-opt.ig-vc-clip.unavailable,\n.ig-vc-opt.ig-vc-loop-speed.unavailable {\n  opacity: 0.4;\n}\n\n/* Theater mode: covers the page so only the video is visible, deliberately\n   without entering browser fullscreen, so tabs and the address bar stay put. */\n.ig-vc-theater {\n  position: fixed;\n  inset: 0;\n  z-index: 2147483647;\n  background: rgba(0, 0, 0, 0.94);\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  justify-content: center;\n  gap: 10px;\n  padding: 14px;\n  box-sizing: border-box;\n}\n\n/* The stage takes every row the top bar leaves, which is what gives the player\n   below a definite height to scale against. Without `flex: 1` the stage height\n   is content-based, so a percentage height inside it resolves to nothing and\n   the video is stuck at its intrinsic size in the middle of a black screen. */\n.ig-vc-theater-stage {\n  flex: 1 1 auto;\n  width: 100%;\n  min-height: 0;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n}\n\n.ig-vc-theater-video {\n  width: 100%;\n  height: 100%;\n  min-height: 0;\n  object-fit: contain;\n  background: #000;\n  border-radius: 4px;\n}\n\n/* An adopted player keeps its own bar, so the loop controls stay usable here.\n   It is sized to fill the stage's height, with `aspect-ratio` set from the\n   video's own dimensions when the overlay opens. That keeps the box exactly as\n   wide as the picture, so the bar pinned to its bottom edge lines up with the\n   video instead of spanning the whole screen -- and, more importantly, stays\n   inside the viewport. An intrinsically sized box taller than the window put\n   the bar below the fold, which is why the controls could not be reached. */\n.ig-vc-theater-adopted {\n  height: 100% !important;\n  width: auto !important;\n  max-width: 100% !important;\n  max-height: 100% !important;\n  margin: 0 !important;\n  padding: 0 !important;\n}\n\n.ig-vc-theater-adopted video {\n  width: 100% !important;\n  height: 100% !important;\n  max-width: none !important;\n  max-height: none !important;\n  object-fit: contain !important;\n}\n\n/* In theater mode the overlay is the whole screen, so revealing the bar only\n   when the pointer is inside the video box makes it feel broken on a portrait\n   video with wide letterboxing. Any pointer movement over the overlay counts. */\n.ig-vc-theater:hover .ig-vc-theater-adopted .ig-vc-bar {\n  pointer-events: auto;\n  opacity: 1;\n  transform: translateY(0);\n}\n\n.ig-vc-theater-bar {\n  width: 100%;\n  flex: 0 0 auto;\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 12px;\n  color: rgba(255, 255, 255, 0.85);\n  font: 400 11px/1.4 -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif;\n}\n\n.ig-vc-theater-label {\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n.ig-vc-theater-actions {\n  display: inline-flex;\n  gap: 6px;\n  flex-shrink: 0;\n}\n\n.ig-vc-theater-bar button {\n  all: unset;\n  padding: 4px 10px;\n  border-radius: 4px;\n  background: rgba(255, 255, 255, 0.14);\n  color: #fff;\n  font: inherit;\n  cursor: pointer;\n}\n\n.ig-vc-theater-bar button:hover {\n  background: rgba(255, 255, 255, 0.26);\n}\n\n/* Buttons & thin Lucide icons */\n.ig-vc-btn {\n  all: unset;\n  width: 22px;\n  height: 22px;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  color: #fff;\n  cursor: pointer;\n  flex-shrink: 0;\n  opacity: 0.9;\n}\n\n.ig-vc-btn:hover {\n  opacity: 1;\n}\n\n.ig-vc-btn svg {\n  width: 16px;\n  height: 16px;\n  fill: none;\n  stroke: currentColor;\n  stroke-width: 1.5;\n  stroke-linecap: round;\n  stroke-linejoin: round;\n  pointer-events: none;\n}\n\n.ig-vc-time {\n  color: rgba(255, 255, 255, 0.9);\n  white-space: nowrap;\n  /* Shrinks only after the seek bar has reached its minimum, so on a very\n     narrow player the readout truncates instead of pushing the buttons on the\n     right out of view. A clipped timestamp is a better failure than a missing\n     fullscreen control. */\n  flex-shrink: 1;\n  min-width: 0;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  text-box: trim-both cap alphabetic;\n}\n\n/* Sliders (Horizontal Seek & Vertical Volume) */\n.ig-vc-seek {\n  flex: 1;\n  min-width: 48px;\n  height: 18px;\n  position: relative;\n  display: flex;\n  align-items: center;\n  cursor: pointer;\n  touch-action: none;\n}\n\n.ig-vc-track {\n  position: relative;\n  width: 100%;\n  height: 2px;\n  background: rgba(255, 255, 255, 0.34);\n  border-radius: 99px;\n  overflow: hidden;\n  transition: height 0.12s ease, width 0.12s ease;\n}\n\n.ig-vc-seek:hover .ig-vc-track {\n  height: 4px;\n}\n\n/* Downloaded range, drawn behind the playback fill so stepping ahead of the\n   buffer is visible rather than just feeling slow */\n.ig-vc-buffer {\n  position: absolute;\n  left: 0;\n  bottom: 0;\n  width: var(--b, 0%);\n  height: 100%;\n  background: rgba(255, 255, 255, 0.28);\n  border-radius: 99px;\n}\n\n.ig-vc-fill {\n  position: absolute;\n  left: 0;\n  bottom: 0;\n  width: var(--v, 0%);\n  height: 100%;\n  background: rgba(255, 255, 255, 0.9);\n  border-radius: 99px;\n}\n\n.ig-vc-seek:hover .ig-vc-fill,\n.ig-vc-vol:hover .ig-vc-fill {\n  background: #fff;\n}\n\n/* Hover Popups (Volume & Speed) */\n.ig-vc-wrap {\n  position: relative;\n  display: inline-flex;\n  align-items: center;\n  flex-shrink: 0;\n}\n\n.ig-vc-popup {\n  position: absolute;\n  bottom: 100%;\n  left: 50%;\n  transform: translateX(-50%);\n  padding-bottom: 6px;\n  display: none;\n}\n\n.ig-vc-wrap:is(:hover, .dragging) .ig-vc-popup {\n  display: block;\n}\n\n.ig-vc-box {\n  width: 22px;\n  box-sizing: border-box;\n  background: rgba(0, 0, 0, 0.5);\n  border-radius: 5px;\n  padding: 0;\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n}\n\n.ig-vc-vol {\n  width: 100%;\n  height: 64px;\n  padding: 6px 0;\n  display: flex;\n  justify-content: center;\n  cursor: pointer;\n  touch-action: none;\n}\n\n.ig-vc-vol .ig-vc-track {\n  width: 2px;\n  height: 100%;\n}\n\n.ig-vc-vol:hover .ig-vc-track {\n  width: 4px;\n}\n\n.ig-vc-vol .ig-vc-fill {\n  width: 100%;\n  height: var(--v, 100%);\n}\n\n/* Speed Button & Vertical List */\n.ig-vc-speed-btn {\n  width: 28px;\n  text-align: center;\n  font-size: 11px;\n  font-weight: 400;\n  text-box: trim-both cap alphabetic;\n}\n\n.ig-vc-speed-box {\n  width: auto;\n  padding: 3px;\n  gap: 1px;\n}\n\n.ig-vc-opt {\n  all: unset;\n  box-sizing: border-box;\n  width: 100%;\n  padding: 3px 6px;\n  font-size: 10px;\n  font-weight: 400;\n  color: rgba(255, 255, 255, 0.72);\n  text-align: center;\n  border-radius: 3px;\n  cursor: pointer;\n}\n\n.ig-vc-opt:hover {\n  background: rgba(255, 255, 255, 0.14);\n  color: #fff;\n}\n\n.ig-vc-opt.active {\n  background: rgba(255, 255, 255, 0.24);\n  color: #fff;\n}\n\n/* ===================================================================\n   Touch mode (iPhone / iPad Safari) — html.ig-vc-touch, set from JS when the\n   primary pointer is coarse and cannot hover. Desktop is unaffected: the extra\n   frame-step buttons and the in-menu loop on/off exist only here.\n   =================================================================== */\n.ig-vc-step,\n.ig-vc-loop-onoff {\n  display: none !important;\n}\n\n.ig-vc-touch .ig-vc-step {\n  display: inline-flex !important;\n}\n\n.ig-vc-touch .ig-vc-loop-onoff {\n  display: block !important;\n}\n\n/* Revealed: by a tap (.ig-vc-kb, timed), while paused, while dragging, or while\n   a menu is open. Sticky :hover from a previous tap must NOT keep it up. */\n/* !important because the desktop hover rule is more specific, and iOS leaves\n   :hover stuck on the last tapped element. */\n.ig-vc-touch .ig-vc-player:not(.ig-vc-kb, .ig-vc-paused, .dragging, :has(.ig-vc-open)) .ig-vc-bar {\n  opacity: 0 !important;\n  pointer-events: none !important;\n  transform: translateY(100%) !important;\n}\n\n.ig-vc-touch .ig-vc-player:is(.ig-vc-kb, .ig-vc-paused, .dragging, :has(.ig-vc-open)) .ig-vc-bar {\n  opacity: 1;\n  pointer-events: auto;\n  transform: translateY(0);\n}\n\n/* Two rows: full-width seek track with the time on top, buttons below. */\n.ig-vc-touch .ig-vc-bar {\n  height: auto;\n  flex-wrap: wrap;\n  justify-content: space-between;\n  row-gap: 2px;\n  column-gap: 0;\n  padding: 4px 6px 6px;\n  font-size: 13px;\n  background: linear-gradient(to top, rgba(0, 0, 0, 0.7), rgba(0, 0, 0, 0.45) 70%, transparent);\n  -webkit-touch-callout: none;\n  -webkit-tap-highlight-color: transparent;\n}\n\n.ig-vc-touch .ig-vc-seek {\n  order: -2;\n  flex: 1 1 0;\n  height: 32px;\n}\n\n.ig-vc-touch .ig-vc-time {\n  order: -1;\n  flex: 0 0 auto;\n  padding-left: 8px;\n}\n\n/* Line break between the seek row and the button row. */\n.ig-vc-touch .ig-vc-bar::after {\n  content: \"\";\n  order: -1;\n  flex-basis: 100%;\n  height: 0;\n}\n\n.ig-vc-touch .ig-vc-track,\n.ig-vc-touch .ig-vc-seek:hover .ig-vc-track {\n  height: 4px;\n}\n\n.ig-vc-touch .ig-vc-playhead {\n  width: 4px;\n  height: 22px;\n  margin-left: -2px;\n  border-radius: 2px;\n}\n\n.ig-vc-touch .ig-vc-handle {\n  width: 16px;\n  height: 26px;\n  margin-left: -8px;\n  border-radius: 4px;\n}\n\n.ig-vc-touch .ig-vc-btn {\n  width: 40px;\n  height: 40px;\n  border-radius: 8px;\n}\n\n.ig-vc-touch .ig-vc-btn:active {\n  background: rgba(255, 255, 255, 0.2);\n}\n\n.ig-vc-touch .ig-vc-btn svg {\n  width: 22px;\n  height: 22px;\n  stroke-width: 1.8;\n}\n\n.ig-vc-touch .ig-vc-speed-btn {\n  width: 44px;\n  font-size: 14px;\n  font-weight: 600;\n}\n\n/* Menus open on tap (.ig-vc-open), not hover. Volume is read-only on iOS, so the\n   mute button keeps its tap-to-mute and its volume popup is dropped. */\n.ig-vc-touch .ig-vc-wrap:is(:hover, .dragging) .ig-vc-popup {\n  display: none;\n}\n\n.ig-vc-touch .ig-vc-wrap.ig-vc-open .ig-vc-popup {\n  display: block;\n}\n\n.ig-vc-touch .ig-vc-wrap:has(.ig-vc-vol) .ig-vc-popup {\n  display: none !important;\n}\n\n.ig-vc-touch .ig-vc-box {\n  width: auto;\n  min-width: 64px;\n  padding: 4px;\n  gap: 2px;\n  border-radius: 10px;\n  background: rgba(20, 20, 20, 0.92);\n}\n\n.ig-vc-touch .ig-vc-opt {\n  min-height: 38px;\n  padding: 9px 14px;\n  font-size: 15px;\n  border-radius: 7px;\n  color: #fff;\n}\n\n.ig-vc-touch .ig-vc-opt:hover {\n  background: none;\n}\n\n.ig-vc-touch .ig-vc-opt:active,\n.ig-vc-touch .ig-vc-opt.active {\n  background: rgba(255, 255, 255, 0.26);\n}\n\n/* The loop menu is the longest; keep it on screen near the right edge. */\n.ig-vc-touch .ig-vc-loop-wrap .ig-vc-popup {\n  left: auto;\n  right: -40px;\n  transform: none;\n}\n\n.ig-vc-touch .ig-vc-loop-box {\n  max-height: 60vh;\n  overflow-y: auto;\n}\n\n/* No captureStream on iOS: clip export cannot work, so don't offer it. */\n.ig-vc-no-clip.ig-vc-touch .ig-vc-clip {\n  display: none !important;\n}\n\n/* Loop painting (touch, Option 3): long-press the track for A, drag, lift for B.\n   While painting the track is zoomed (JS swaps the view to ±10 s around A), so it\n   is drawn taller and tinted to make the mode obvious. Handles are finger-sized\n   all the time on touch so an existing loop can be adjusted by dragging. */\n.ig-vc-touch .ig-vc-hint {\n  font-size: 13px;\n  padding: 6px 10px;\n  border-radius: 8px;\n  white-space: pre-line;\n}\n\n.ig-vc-touch .ig-vc-handle {\n  width: 22px;\n  height: 36px;\n  margin-left: -11px;\n  border-radius: 6px;\n}\n\n.ig-vc-touch .ig-vc-seek.ig-vc-painting {\n  height: 44px;\n}\n\n.ig-vc-touch .ig-vc-seek.ig-vc-painting .ig-vc-track {\n  height: 12px;\n  border-radius: 6px;\n  background: rgba(255, 255, 255, 0.3);\n  box-shadow: 0 0 0 2px rgba(80, 170, 255, 0.9);\n}\n\n.ig-vc-touch .ig-vc-seek.ig-vc-painting .ig-vc-fill {\n  background: transparent;\n}\n\n.ig-vc-touch .ig-vc-seek.ig-vc-painting .ig-vc-handle {\n  height: 44px;\n}\n\n.ig-vc-touch .ig-vc-hint {\n  width: max-content;\n  max-width: 90vw;\n}\n\n.ig-vc-touch .ig-vc-seek.ig-vc-painting .ig-vc-loop-span {\n  background: rgba(80, 170, 255, 0.95);\n}\n";
 
   // The extension gets its CSS injected by the manifest, which is privileged
   // and ignores the page's CSP. A userscript has to insert it, which a strict
@@ -556,6 +556,16 @@
       for (const el of document.querySelectorAll('.ig-vc-host')) el.classList.remove('ig-vc-host');
       for (const el of document.querySelectorAll('.ig-vc-series-overlay')) el.classList.remove('ig-vc-series-overlay');
 
+      // Touch mode (iPhone/iPad Safari): there is no hover to reveal the bar and no
+      // keyboard for frame stepping, so on a coarse pointer without hover the bar is
+      // revealed by tapping the player, stays up while paused, gets finger-sized
+      // targets, opens its popups on tap, and gains on-screen frame-step buttons
+      // (tap = one frame, hold = scrub, mirroring the arrow keys).
+      const TOUCH = Boolean(window.matchMedia?.('(hover: none) and (pointer: coarse)').matches);
+      document.documentElement.classList.toggle('ig-vc-touch', TOUCH);
+      // iOS Safari has no HTMLMediaElement.captureStream, so clip export cannot work.
+      document.documentElement.classList.toggle('ig-vc-no-clip', typeof HTMLMediaElement.prototype.captureStream !== 'function');
+
       const DEFAULT_SETTINGS = { volume: 1, muted: false, playbackRate: 1, loopRate: 1 };
       const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
       // Slow-biased, because the point of a practice loop is studying a fast move.
@@ -606,6 +616,15 @@
 
       // Held-key scrubbing
       const HOLD_DELAY_MS = 180;
+      // Touch loop painting on the seek track: long-press sets A under the finger,
+      // the track zooms to ±PAINT_WINDOW_SECONDS around it, dragging previews frames
+      // and lifting the finger sets B and starts the loop.
+      const LONG_PRESS_MS = 450;
+      const LONG_PRESS_SLOP_PX = 10;
+      const PAINT_WINDOW_SECONDS = 10;
+      // A long-press alone makes a loop of this length starting under the finger;
+      // dragging before lifting replaces the default B with the finger's position.
+      const DEFAULT_LOOP_SECONDS = 5;
       const SCRUB_RATE_NORMAL = 0.5;
       const SCRUB_RATE_FAST = 2;
       const SCRUB_MAX_CATCHUP_FRAMES = 3;
@@ -1118,6 +1137,8 @@
         bar.innerHTML = `
           <button type="button" class="ig-vc-btn ig-vc-loop-restart"></button>
           <button type="button" class="ig-vc-btn ig-vc-play"></button>
+          <button type="button" class="ig-vc-btn ig-vc-step ig-vc-step-back" title="Back one frame (hold to scrub)">${svg('<path d="M6 5v14"/><path d="M18 6l-8 6 8 6z"/>')}</button>
+          <button type="button" class="ig-vc-btn ig-vc-step ig-vc-step-fwd" title="Forward one frame (hold to scrub)">${svg('<path d="M18 5v14"/><path d="M6 6l8 6-8 6z"/>')}</button>
           <span class="ig-vc-time">0:00 / 0:00</span>
           <div class="ig-vc-seek"><div class="ig-vc-track"><div class="ig-vc-buffer"></div><div class="ig-vc-loop-span"></div><div class="ig-vc-fill"></div></div><div class="ig-vc-playhead"></div><div class="ig-vc-handle ig-vc-handle-a"></div><div class="ig-vc-handle ig-vc-handle-b"></div><div class="ig-vc-hint"></div></div>
           <div class="ig-vc-wrap">
@@ -1137,6 +1158,7 @@
             <div class="ig-vc-popup"><div class="ig-vc-box ig-vc-loop-box">
               ${LOOP_SPEEDS.map((s) => `<button type="button" class="ig-vc-opt ig-vc-loop-speed" data-loop-speed="${s}">${s}x</button>`).join('')}
               <div class="ig-vc-loop-sep"></div>
+              <button type="button" class="ig-vc-opt ig-vc-loop-onoff">loop</button>
               <button type="button" class="ig-vc-opt ig-vc-loop-in">A</button>
               <button type="button" class="ig-vc-opt ig-vc-loop-out">B</button>
               <button type="button" class="ig-vc-opt ig-vc-loop-clear">clr</button>
@@ -1153,6 +1175,9 @@
           '.ig-vc-loop-in', '.ig-vc-loop-out', '.ig-vc-loop-toggle', '.ig-vc-clip', '.ig-vc-fs'
         ].map((sel) => bar.querySelector(sel));
         const loopClearBtn = bar.querySelector('.ig-vc-loop-clear');
+        const loopOnOffBtn = bar.querySelector('.ig-vc-loop-onoff');
+        const stepBackBtn = bar.querySelector('.ig-vc-step-back');
+        const stepFwdBtn = bar.querySelector('.ig-vc-step-fwd');
         const loopZoomBtn = bar.querySelector('.ig-vc-loop-zoom');
         // Promoted to the bar: sharing a loop is the common action, exporting a
         // clip the rare one, so the bar slot the clip button held is now the link.
@@ -1370,6 +1395,7 @@
           }
 
           playBtn.innerHTML = video.paused ? ICONS.play : ICONS.pause;
+          if (TOUCH) currentContainer?.classList.toggle('ig-vc-paused', video.paused);
           const effVol = settings.muted ? 0 : vol;
           volEl.style.setProperty('--v', `${(effVol * 100).toFixed(1)}%`);
           muteBtn.innerHTML = effVol === 0 ? ICONS.volumeX : effVol < 0.25 ? ICONS.volume : effVol < 0.65 ? ICONS.volume1 : ICONS.volume2;
@@ -1389,6 +1415,8 @@
             : `Loop end ${formatTime(loopOut, 2)} — press ] again to move it`;
           loopToggleBtn.innerHTML = ICONS.loop;
           loopToggleBtn.classList.toggle('active', looping);
+          loopOnOffBtn.classList.toggle('active', looping);
+          loopOnOffBtn.classList.toggle('unavailable', !range);
           loopToggleBtn.classList.toggle('unavailable', !range);
           loopToggleBtn.title = range
             ? (looping
@@ -1564,6 +1592,99 @@
           }
         );
 
+        // Loop painting (touch). Registered after bindSlider so these listeners run
+        // after the scrub's own: the scrub keeps doing the seeking and frame preview
+        // through currentView(), and painting only swaps in a zoomed view and turns
+        // the drag's start and end into A and B.
+        if (TOUCH) {
+          let pressTimer = null;
+          let pressX = 0;
+          let pressY = 0;
+          let painting = false;
+          let dragged = false;
+          let anchor = null;
+          let paintX = 0;
+          const cancelPress = () => { clearTimeout(pressTimer); pressTimer = null; };
+          const placeMarkers = (t) => {
+            loopIn = Math.min(anchor, t);
+            loopOut = Math.max(anchor, t);
+            if (loopOut - loopIn < 1e-6) loopOut = null;
+          };
+          seekEl.addEventListener('pointerdown', (e) => {
+            if (e.button !== 0) return;
+            cancelPress();
+            pressX = e.clientX;
+            pressY = e.clientY;
+            pressTimer = setTimeout(() => {
+              pressTimer = null;
+              if (!seekEl.hasPointerCapture(e.pointerId) || !Number.isFinite(video.duration) || video.duration <= 0) return;
+              painting = true;
+              dragged = false;
+              paintX = e.clientX;
+              anchor = markerTimeNow();
+              loopIn = anchor;
+              // Default B: DEFAULT_LOOP_SECONDS later, frame-aligned, clamped to the end.
+              loopOut = core.frameCenter(
+                core.clampFrame(core.frameIndexAt(Math.min(video.duration, anchor + DEFAULT_LOOP_SECONDS), frameClock.fps), lastFrameIndex()),
+                frameClock.fps
+              );
+              if (loopOut <= loopIn) loopOut = null;
+              looping = false;
+              stopLoopWatcher();
+              // Zoom the drag mapping to a window around A, so a few seconds fill the
+              // whole track. The scrub froze the view on press; this replaces it.
+              // Positioned so A stays under the finger: the finger's fraction of the
+              // track maps to A in the new window (clamped at the media's ends).
+              const span = Math.min(video.duration, PAINT_WINDOW_SECONDS * 2);
+              const tr = seekTrack.getBoundingClientRect();
+              const fingerRatio = tr.width > 0 ? Math.min(1, Math.max(0, (e.clientX - tr.left) / tr.width)) : 0.5;
+              const start = Math.min(Math.max(0, anchor - fingerRatio * span), video.duration - span);
+              frozenView = { start, end: start + span, zoomed: span < video.duration, padSeconds: 0 };
+              seekEl.classList.add('ig-vc-painting');
+              showHint('paint');
+              sync();
+              updateTime();
+            }, LONG_PRESS_MS);
+          }, { signal });
+          seekEl.addEventListener('pointermove', (e) => {
+            if (pressTimer && Math.hypot(e.clientX - pressX, e.clientY - pressY) > LONG_PRESS_SLOP_PX) cancelPress();
+            if (!painting || dragTargetTime === null) return;
+            // Until the finger actually moves, keep the default 5 s loop on screen.
+            if (!dragged && Math.abs(e.clientX - paintX) <= LONG_PRESS_SLOP_PX) return;
+            dragged = true;
+            placeMarkers(markerTimeNow());
+            showHint('paint');
+            updateTime();
+          }, { signal });
+          const finishPaint = () => {
+            cancelPress();
+            if (!painting) return;
+            painting = false;
+            seekEl.classList.remove('ig-vc-painting');
+            // Dragged: the scrub's release has just issued an exact frame-aligned
+            // seek to the lift point, so the video's position is B. Not dragged:
+            // keep the default loop set on long-press.
+            if (dragged) placeMarkers(markerTimeNow());
+            if (loopRange()) {
+              looping = true;
+              startLoopWatcher();
+              beginSeek(loopIn);
+              requestPlay();
+            } else {
+              loopIn = anchor;
+              loopOut = null;
+            }
+            anchor = null;
+            showHint(null);
+            revealBar(true);
+            sync();
+            updateTime();
+            writeLoopToUrl();
+          };
+          seekEl.addEventListener('pointerup', finishPaint, { signal });
+          seekEl.addEventListener('pointercancel', finishPaint, { signal });
+        }
+
         bindSlider(volEl, true, (ratio) => {
           saveSettings({ volume: ratio, muted: ratio === 0 });
           video.muted = ratio === 0;
@@ -1636,7 +1757,7 @@
           bar.remove();
           clearSeriesOverlay();
           const container = currentContainer || (video.isConnected && resolvePlayerContainer(video));
-          container?.classList.remove('ig-vc-player', 'ig-vc-kb');
+          container?.classList.remove('ig-vc-player', 'ig-vc-kb', 'ig-vc-paused');
           currentContainer = null;
         };
 
@@ -1823,8 +1944,10 @@
           if (loopIn !== null || loopOut !== null) lines.push(renderMarkers());
           if (mode === 'in') lines.push('moving A');
           else if (mode === 'out') lines.push('moving B');
+          else if (mode === 'paint') lines.push('drag to move B · lift to loop');
           else if (mode === 'playhead') {
-            if (loopIn === null) lines.push('press  [  to set A here');
+            if (TOUCH) lines.push(loopIn === null ? 'hold to start a loop here' : 'hold to paint a new loop');
+            else if (loopIn === null) lines.push('press  [  to set A here');
             else if (loopOut === null) lines.push('press  ]  to set B here');
             else lines.push('press  [  or  ]  to move A or B here');
           }
@@ -2328,7 +2451,47 @@
         speedBtn.addEventListener('contextmenu', () => saveSettings({ playbackRate: 1 }));
         loopInBtn.addEventListener('click', setLoopIn);
         loopOutBtn.addEventListener('click', setLoopOut);
-        loopToggleBtn.addEventListener('click', toggleLoop);
+        // A tap-opened menu replaces the hover popups on touch. The speed and loop
+        // buttons open theirs; the loop button's own toggle moves into its menu as
+        // "loop", since a tap cannot both open the menu and toggle looping.
+        const toggleMenu = (btn) => {
+          const wrap = btn.closest('.ig-vc-wrap');
+          const open = !wrap.classList.contains('ig-vc-open');
+          for (const w of bar.querySelectorAll('.ig-vc-wrap.ig-vc-open')) w.classList.remove('ig-vc-open');
+          wrap.classList.toggle('ig-vc-open', open);
+          revealBar(frameMode);
+        };
+        if (TOUCH) {
+          loopToggleBtn.addEventListener('click', () => toggleMenu(loopToggleBtn));
+          speedBtn.addEventListener('click', () => toggleMenu(speedBtn));
+        } else {
+          loopToggleBtn.addEventListener('click', toggleLoop);
+        }
+        loopOnOffBtn.addEventListener('click', toggleLoop);
+
+        // Frame-step buttons: the arrow keys' tap-to-step / hold-to-scrub, on a finger.
+        for (const [btn, direction] of [[stepBackBtn, -1], [stepFwdBtn, 1]]) {
+          let hold = null;
+          let scrubbingHere = false;
+          const release = () => {
+            clearTimeout(hold);
+            hold = null;
+            if (scrubbingHere) endScrub();
+            scrubbingHere = false;
+          };
+          btn.addEventListener('pointerdown', (e) => {
+            if (e.button !== 0) return;
+            release();
+            if (!stepFrames(direction)) return;
+            hold = setTimeout(() => {
+              hold = null;
+              scrubbingHere = true;
+              beginScrub(direction, false);
+            }, HOLD_DELAY_MS);
+          }, { signal });
+          for (const evt of ['pointerup', 'pointercancel', 'pointerleave']) btn.addEventListener(evt, release, { signal });
+        }
+        if (TOUCH) bar.addEventListener('pointerdown', () => revealBar(frameMode), { signal });
         loopToggleBtn.addEventListener('contextmenu', clearLoop);
         for (const opt of loopSpeedOpts) {
           opt.addEventListener('click', () => {
@@ -2467,11 +2630,13 @@
         sync();
         updateTime();
         applyUrlLoop();
+        if (TOUCH) revealBar(false);
 
         controllers.set(video, {
           mount, sync, destroy, stepFrames, togglePlay, beginScrub, endScrub,
           setLoopIn, setLoopOut, toggleLoop, restartLoop, clearLoop,
           openTheater: openVideoTheater,
+          reveal: () => revealBar(false),
           container: () => currentContainer
         });
       }
@@ -2642,6 +2807,24 @@
         if (KEYS_FRAME_BACK.has(e.key) || KEYS_FRAME_FORWARD.has(e.key)) stopHold();
       };
 
+      // Touch: a tap anywhere on a player reveals its bar (the site still gets the
+      // tap too), and a tap outside an open menu closes it.
+      const onTouchPointerDown = (e) => {
+        for (const wrap of document.querySelectorAll('.ig-vc-wrap.ig-vc-open')) {
+          if (!wrap.contains(e.target)) wrap.classList.remove('ig-vc-open');
+        }
+      };
+      const onTouchPointerUp = (e) => {
+        if (e.target?.closest?.('.ig-vc-bar')) return;
+        for (const ctrl of controllers.values()) {
+          if (ctrl.container()?.contains(e.target)) ctrl.reveal();
+        }
+      };
+      if (TOUCH) {
+        window.addEventListener('pointerdown', onTouchPointerDown, { capture: true, passive: true });
+        window.addEventListener('pointerup', onTouchPointerUp, { capture: true, passive: true });
+      }
+
       const stopVis = (e) => e.stopImmediatePropagation();
       document.addEventListener('visibilitychange', stopVis, true);
       window.addEventListener('pointermove', onFsMove, { passive: true });
@@ -2691,6 +2874,8 @@
         window.removeEventListener('blur', stopHold);
         stopHold();
         document.removeEventListener('fullscreenchange', onFsSync);
+        window.removeEventListener('pointerdown', onTouchPointerDown, true);
+        window.removeEventListener('pointerup', onTouchPointerUp, true);
         observer.disconnect();
         for (const ctrl of controllers.values()) ctrl.destroy();
         controllers.clear();

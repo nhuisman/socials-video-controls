@@ -7,6 +7,16 @@
   for (const el of document.querySelectorAll('.ig-vc-host')) el.classList.remove('ig-vc-host');
   for (const el of document.querySelectorAll('.ig-vc-series-overlay')) el.classList.remove('ig-vc-series-overlay');
 
+  // Touch mode (iPhone/iPad Safari): there is no hover to reveal the bar and no
+  // keyboard for frame stepping, so on a coarse pointer without hover the bar is
+  // revealed by tapping the player, stays up while paused, gets finger-sized
+  // targets, opens its popups on tap, and gains on-screen frame-step buttons
+  // (tap = one frame, hold = scrub, mirroring the arrow keys).
+  const TOUCH = Boolean(window.matchMedia?.('(hover: none) and (pointer: coarse)').matches);
+  document.documentElement.classList.toggle('ig-vc-touch', TOUCH);
+  // iOS Safari has no HTMLMediaElement.captureStream, so clip export cannot work.
+  document.documentElement.classList.toggle('ig-vc-no-clip', typeof HTMLMediaElement.prototype.captureStream !== 'function');
+
   const DEFAULT_SETTINGS = { volume: 1, muted: false, playbackRate: 1, loopRate: 1 };
   const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
   // Slow-biased, because the point of a practice loop is studying a fast move.
@@ -57,6 +67,15 @@
 
   // Held-key scrubbing
   const HOLD_DELAY_MS = 180;
+  // Touch loop painting on the seek track: long-press sets A under the finger,
+  // the track zooms to ±PAINT_WINDOW_SECONDS around it, dragging previews frames
+  // and lifting the finger sets B and starts the loop.
+  const LONG_PRESS_MS = 450;
+  const LONG_PRESS_SLOP_PX = 10;
+  const PAINT_WINDOW_SECONDS = 10;
+  // A long-press alone makes a loop of this length starting under the finger;
+  // dragging before lifting replaces the default B with the finger's position.
+  const DEFAULT_LOOP_SECONDS = 5;
   const SCRUB_RATE_NORMAL = 0.5;
   const SCRUB_RATE_FAST = 2;
   const SCRUB_MAX_CATCHUP_FRAMES = 3;
@@ -569,6 +588,8 @@
     bar.innerHTML = `
       <button type="button" class="ig-vc-btn ig-vc-loop-restart"></button>
       <button type="button" class="ig-vc-btn ig-vc-play"></button>
+      <button type="button" class="ig-vc-btn ig-vc-step ig-vc-step-back" title="Back one frame (hold to scrub)">${svg('<path d="M6 5v14"/><path d="M18 6l-8 6 8 6z"/>')}</button>
+      <button type="button" class="ig-vc-btn ig-vc-step ig-vc-step-fwd" title="Forward one frame (hold to scrub)">${svg('<path d="M18 5v14"/><path d="M6 6l8 6-8 6z"/>')}</button>
       <span class="ig-vc-time">0:00 / 0:00</span>
       <div class="ig-vc-seek"><div class="ig-vc-track"><div class="ig-vc-buffer"></div><div class="ig-vc-loop-span"></div><div class="ig-vc-fill"></div></div><div class="ig-vc-playhead"></div><div class="ig-vc-handle ig-vc-handle-a"></div><div class="ig-vc-handle ig-vc-handle-b"></div><div class="ig-vc-hint"></div></div>
       <div class="ig-vc-wrap">
@@ -588,6 +609,7 @@
         <div class="ig-vc-popup"><div class="ig-vc-box ig-vc-loop-box">
           ${LOOP_SPEEDS.map((s) => `<button type="button" class="ig-vc-opt ig-vc-loop-speed" data-loop-speed="${s}">${s}x</button>`).join('')}
           <div class="ig-vc-loop-sep"></div>
+          <button type="button" class="ig-vc-opt ig-vc-loop-onoff">loop</button>
           <button type="button" class="ig-vc-opt ig-vc-loop-in">A</button>
           <button type="button" class="ig-vc-opt ig-vc-loop-out">B</button>
           <button type="button" class="ig-vc-opt ig-vc-loop-clear">clr</button>
@@ -604,6 +626,9 @@
       '.ig-vc-loop-in', '.ig-vc-loop-out', '.ig-vc-loop-toggle', '.ig-vc-clip', '.ig-vc-fs'
     ].map((sel) => bar.querySelector(sel));
     const loopClearBtn = bar.querySelector('.ig-vc-loop-clear');
+    const loopOnOffBtn = bar.querySelector('.ig-vc-loop-onoff');
+    const stepBackBtn = bar.querySelector('.ig-vc-step-back');
+    const stepFwdBtn = bar.querySelector('.ig-vc-step-fwd');
     const loopZoomBtn = bar.querySelector('.ig-vc-loop-zoom');
     // Promoted to the bar: sharing a loop is the common action, exporting a
     // clip the rare one, so the bar slot the clip button held is now the link.
@@ -821,6 +846,7 @@
       }
 
       playBtn.innerHTML = video.paused ? ICONS.play : ICONS.pause;
+      if (TOUCH) currentContainer?.classList.toggle('ig-vc-paused', video.paused);
       const effVol = settings.muted ? 0 : vol;
       volEl.style.setProperty('--v', `${(effVol * 100).toFixed(1)}%`);
       muteBtn.innerHTML = effVol === 0 ? ICONS.volumeX : effVol < 0.25 ? ICONS.volume : effVol < 0.65 ? ICONS.volume1 : ICONS.volume2;
@@ -840,6 +866,8 @@
         : `Loop end ${formatTime(loopOut, 2)} — press ] again to move it`;
       loopToggleBtn.innerHTML = ICONS.loop;
       loopToggleBtn.classList.toggle('active', looping);
+      loopOnOffBtn.classList.toggle('active', looping);
+      loopOnOffBtn.classList.toggle('unavailable', !range);
       loopToggleBtn.classList.toggle('unavailable', !range);
       loopToggleBtn.title = range
         ? (looping
@@ -1015,6 +1043,99 @@
       }
     );
 
+    // Loop painting (touch). Registered after bindSlider so these listeners run
+    // after the scrub's own: the scrub keeps doing the seeking and frame preview
+    // through currentView(), and painting only swaps in a zoomed view and turns
+    // the drag's start and end into A and B.
+    if (TOUCH) {
+      let pressTimer = null;
+      let pressX = 0;
+      let pressY = 0;
+      let painting = false;
+      let dragged = false;
+      let anchor = null;
+      let paintX = 0;
+      const cancelPress = () => { clearTimeout(pressTimer); pressTimer = null; };
+      const placeMarkers = (t) => {
+        loopIn = Math.min(anchor, t);
+        loopOut = Math.max(anchor, t);
+        if (loopOut - loopIn < 1e-6) loopOut = null;
+      };
+      seekEl.addEventListener('pointerdown', (e) => {
+        if (e.button !== 0) return;
+        cancelPress();
+        pressX = e.clientX;
+        pressY = e.clientY;
+        pressTimer = setTimeout(() => {
+          pressTimer = null;
+          if (!seekEl.hasPointerCapture(e.pointerId) || !Number.isFinite(video.duration) || video.duration <= 0) return;
+          painting = true;
+          dragged = false;
+          paintX = e.clientX;
+          anchor = markerTimeNow();
+          loopIn = anchor;
+          // Default B: DEFAULT_LOOP_SECONDS later, frame-aligned, clamped to the end.
+          loopOut = core.frameCenter(
+            core.clampFrame(core.frameIndexAt(Math.min(video.duration, anchor + DEFAULT_LOOP_SECONDS), frameClock.fps), lastFrameIndex()),
+            frameClock.fps
+          );
+          if (loopOut <= loopIn) loopOut = null;
+          looping = false;
+          stopLoopWatcher();
+          // Zoom the drag mapping to a window around A, so a few seconds fill the
+          // whole track. The scrub froze the view on press; this replaces it.
+          // Positioned so A stays under the finger: the finger's fraction of the
+          // track maps to A in the new window (clamped at the media's ends).
+          const span = Math.min(video.duration, PAINT_WINDOW_SECONDS * 2);
+          const tr = seekTrack.getBoundingClientRect();
+          const fingerRatio = tr.width > 0 ? Math.min(1, Math.max(0, (e.clientX - tr.left) / tr.width)) : 0.5;
+          const start = Math.min(Math.max(0, anchor - fingerRatio * span), video.duration - span);
+          frozenView = { start, end: start + span, zoomed: span < video.duration, padSeconds: 0 };
+          seekEl.classList.add('ig-vc-painting');
+          showHint('paint');
+          sync();
+          updateTime();
+        }, LONG_PRESS_MS);
+      }, { signal });
+      seekEl.addEventListener('pointermove', (e) => {
+        if (pressTimer && Math.hypot(e.clientX - pressX, e.clientY - pressY) > LONG_PRESS_SLOP_PX) cancelPress();
+        if (!painting || dragTargetTime === null) return;
+        // Until the finger actually moves, keep the default 5 s loop on screen.
+        if (!dragged && Math.abs(e.clientX - paintX) <= LONG_PRESS_SLOP_PX) return;
+        dragged = true;
+        placeMarkers(markerTimeNow());
+        showHint('paint');
+        updateTime();
+      }, { signal });
+      const finishPaint = () => {
+        cancelPress();
+        if (!painting) return;
+        painting = false;
+        seekEl.classList.remove('ig-vc-painting');
+        // Dragged: the scrub's release has just issued an exact frame-aligned
+        // seek to the lift point, so the video's position is B. Not dragged:
+        // keep the default loop set on long-press.
+        if (dragged) placeMarkers(markerTimeNow());
+        if (loopRange()) {
+          looping = true;
+          startLoopWatcher();
+          beginSeek(loopIn);
+          requestPlay();
+        } else {
+          loopIn = anchor;
+          loopOut = null;
+        }
+        anchor = null;
+        showHint(null);
+        revealBar(true);
+        sync();
+        updateTime();
+        writeLoopToUrl();
+      };
+      seekEl.addEventListener('pointerup', finishPaint, { signal });
+      seekEl.addEventListener('pointercancel', finishPaint, { signal });
+    }
+
     bindSlider(volEl, true, (ratio) => {
       saveSettings({ volume: ratio, muted: ratio === 0 });
       video.muted = ratio === 0;
@@ -1087,7 +1208,7 @@
       bar.remove();
       clearSeriesOverlay();
       const container = currentContainer || (video.isConnected && resolvePlayerContainer(video));
-      container?.classList.remove('ig-vc-player', 'ig-vc-kb');
+      container?.classList.remove('ig-vc-player', 'ig-vc-kb', 'ig-vc-paused');
       currentContainer = null;
     };
 
@@ -1274,8 +1395,10 @@
       if (loopIn !== null || loopOut !== null) lines.push(renderMarkers());
       if (mode === 'in') lines.push('moving A');
       else if (mode === 'out') lines.push('moving B');
+      else if (mode === 'paint') lines.push('drag to move B · lift to loop');
       else if (mode === 'playhead') {
-        if (loopIn === null) lines.push('press  [  to set A here');
+        if (TOUCH) lines.push(loopIn === null ? 'hold to start a loop here' : 'hold to paint a new loop');
+        else if (loopIn === null) lines.push('press  [  to set A here');
         else if (loopOut === null) lines.push('press  ]  to set B here');
         else lines.push('press  [  or  ]  to move A or B here');
       }
@@ -1779,7 +1902,47 @@
     speedBtn.addEventListener('contextmenu', () => saveSettings({ playbackRate: 1 }));
     loopInBtn.addEventListener('click', setLoopIn);
     loopOutBtn.addEventListener('click', setLoopOut);
-    loopToggleBtn.addEventListener('click', toggleLoop);
+    // A tap-opened menu replaces the hover popups on touch. The speed and loop
+    // buttons open theirs; the loop button's own toggle moves into its menu as
+    // "loop", since a tap cannot both open the menu and toggle looping.
+    const toggleMenu = (btn) => {
+      const wrap = btn.closest('.ig-vc-wrap');
+      const open = !wrap.classList.contains('ig-vc-open');
+      for (const w of bar.querySelectorAll('.ig-vc-wrap.ig-vc-open')) w.classList.remove('ig-vc-open');
+      wrap.classList.toggle('ig-vc-open', open);
+      revealBar(frameMode);
+    };
+    if (TOUCH) {
+      loopToggleBtn.addEventListener('click', () => toggleMenu(loopToggleBtn));
+      speedBtn.addEventListener('click', () => toggleMenu(speedBtn));
+    } else {
+      loopToggleBtn.addEventListener('click', toggleLoop);
+    }
+    loopOnOffBtn.addEventListener('click', toggleLoop);
+
+    // Frame-step buttons: the arrow keys' tap-to-step / hold-to-scrub, on a finger.
+    for (const [btn, direction] of [[stepBackBtn, -1], [stepFwdBtn, 1]]) {
+      let hold = null;
+      let scrubbingHere = false;
+      const release = () => {
+        clearTimeout(hold);
+        hold = null;
+        if (scrubbingHere) endScrub();
+        scrubbingHere = false;
+      };
+      btn.addEventListener('pointerdown', (e) => {
+        if (e.button !== 0) return;
+        release();
+        if (!stepFrames(direction)) return;
+        hold = setTimeout(() => {
+          hold = null;
+          scrubbingHere = true;
+          beginScrub(direction, false);
+        }, HOLD_DELAY_MS);
+      }, { signal });
+      for (const evt of ['pointerup', 'pointercancel', 'pointerleave']) btn.addEventListener(evt, release, { signal });
+    }
+    if (TOUCH) bar.addEventListener('pointerdown', () => revealBar(frameMode), { signal });
     loopToggleBtn.addEventListener('contextmenu', clearLoop);
     for (const opt of loopSpeedOpts) {
       opt.addEventListener('click', () => {
@@ -1918,11 +2081,13 @@
     sync();
     updateTime();
     applyUrlLoop();
+    if (TOUCH) revealBar(false);
 
     controllers.set(video, {
       mount, sync, destroy, stepFrames, togglePlay, beginScrub, endScrub,
       setLoopIn, setLoopOut, toggleLoop, restartLoop, clearLoop,
       openTheater: openVideoTheater,
+      reveal: () => revealBar(false),
       container: () => currentContainer
     });
   }
@@ -2093,6 +2258,24 @@
     if (KEYS_FRAME_BACK.has(e.key) || KEYS_FRAME_FORWARD.has(e.key)) stopHold();
   };
 
+  // Touch: a tap anywhere on a player reveals its bar (the site still gets the
+  // tap too), and a tap outside an open menu closes it.
+  const onTouchPointerDown = (e) => {
+    for (const wrap of document.querySelectorAll('.ig-vc-wrap.ig-vc-open')) {
+      if (!wrap.contains(e.target)) wrap.classList.remove('ig-vc-open');
+    }
+  };
+  const onTouchPointerUp = (e) => {
+    if (e.target?.closest?.('.ig-vc-bar')) return;
+    for (const ctrl of controllers.values()) {
+      if (ctrl.container()?.contains(e.target)) ctrl.reveal();
+    }
+  };
+  if (TOUCH) {
+    window.addEventListener('pointerdown', onTouchPointerDown, { capture: true, passive: true });
+    window.addEventListener('pointerup', onTouchPointerUp, { capture: true, passive: true });
+  }
+
   const stopVis = (e) => e.stopImmediatePropagation();
   document.addEventListener('visibilitychange', stopVis, true);
   window.addEventListener('pointermove', onFsMove, { passive: true });
@@ -2142,6 +2325,8 @@
     window.removeEventListener('blur', stopHold);
     stopHold();
     document.removeEventListener('fullscreenchange', onFsSync);
+    window.removeEventListener('pointerdown', onTouchPointerDown, true);
+    window.removeEventListener('pointerup', onTouchPointerUp, true);
     observer.disconnect();
     for (const ctrl of controllers.values()) ctrl.destroy();
     controllers.clear();

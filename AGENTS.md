@@ -211,8 +211,62 @@ instead of `document_idle`.
 - **Commit messages** follow Conventional Commits. Build and test before
   committing.
 
+## Touch mode
+
+Touch support lives in the same files as everything else, keyed off input
+capability at runtime. There is no separate touch build, and there must not be:
+delivery and input are independent axes. An iPad with a keyboard wants the
+desktop bar through a userscript; a touchscreen laptop wants touch through the
+extension. A build-time split gets both wrong, and a forked copy would be
+untested code, since the suites only cover `content/`.
+
+The gate is one constant, read in one place:
+
+```js
+const TOUCH = Boolean(window.matchMedia?.('(hover: none) and (pointer: coarse)').matches);
+document.documentElement.classList.toggle('ig-vc-touch', TOUCH);
+```
+
+`(hover: none) and (pointer: coarse)` rather than `pointer: coarse` alone, so a
+touchscreen laptop driven by a trackpad keeps the desktop bar. Turning the whole
+redesign off is a one-line edit.
+
+Three rules keep desktop safe, and a change that breaks one should be rejected:
+
+1. **Every touch CSS rule is scoped under `.ig-vc-touch`** (a class on `html`).
+   The only unscoped additions hide the two new elements -- `.ig-vc-step` and
+   `.ig-vc-loop-onoff` -- which is the safe direction.
+2. **Every touch JS branch is guarded by `TOUCH`.** New code is added alongside
+   existing branches, never inside them.
+3. **The desktop specs are the regression gate.** They run unchanged; passing
+   means desktop is unchanged.
+
+Measured under iPhone emulation: bar 28px -> 86px and two rows, buttons
+22px -> 40px, frame-step buttons shown, in-menu loop toggle shown. On desktop
+every one of those is unchanged.
+
+`html.ig-vc-no-clip` is set when `HTMLMediaElement.prototype.captureStream` is
+missing, which hides clip export on iOS rather than offering a control that
+cannot work.
+
+### Provenance
+
+Touch mode was developed separately in `~/iphone_app/socials-ext`, a `git
+archive` copy of this repository taken at `1c775ff`. It was brought in as a
+three-way merge against that fork point rather than copied over, because this
+repository had moved three commits ahead and a copy would have silently
+reverted Facebook replace mode. `core.js` and `manifest.json` were untouched by
+the import.
+
+If you port more from that project, do the same: diff against the commit in its
+`UPSTREAM_COMMIT`, never copy the files.
+
 ## Known flakes
 
+- **`bar layout > plays and pauses from the bar` on Facebook** can fail in a
+  full run and pass twice out of two in isolation. Facebook re-pauses a video
+  that no genuine gesture started, and whether it does so depends on what the
+  previous test left the player doing. Re-run in isolation before believing it.
 - **`loop in the URL > applies the loop from the URL to the player`** can fail
   in bundle mode when run directly after other URL-loop tests, then pass three
   times out of three in isolation. A URL loop is consumed by the first player
