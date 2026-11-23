@@ -271,11 +271,9 @@
   display: none !important;
 }
 
-.ig-vc-clip {
-  width: 24px;
-}
-
-.ig-vc-clip.ig-vc-clip-text {
+/* A bar button widened to carry short text instead of an icon: clip recording
+   progress previously, and now the loop link's ok/err feedback. */
+.ig-vc-btn.ig-vc-clip-text {
   width: 30px;
   font-size: 10px;
   text-align: center;
@@ -283,12 +281,14 @@
   text-box: trim-both cap alphabetic;
 }
 
-.ig-vc-clip.active {
+/* Clip export lives in the loop menu now, where it is an option like the rest. */
+.ig-vc-opt.ig-vc-clip.active {
   opacity: 1;
   color: rgb(255, 120, 120);
 }
 
-.ig-vc-clip.unavailable {
+.ig-vc-opt.ig-vc-clip.unavailable,
+.ig-vc-opt.ig-vc-loop-speed.unavailable {
   opacity: 0.4;
 }
 
@@ -308,42 +308,64 @@
   box-sizing: border-box;
 }
 
+/* The stage takes every row the top bar leaves, which is what gives the player
+   below a definite height to scale against. Without `flex: 1` the stage height
+   is content-based, so a percentage height inside it resolves to nothing and
+   the video is stuck at its intrinsic size in the middle of a black screen. */
 .ig-vc-theater-stage {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  max-width: 100%;
-  max-height: calc(100% - 40px);
-  min-height: 0;
 }
 
 .ig-vc-theater-video {
-  max-width: 100%;
-  max-height: calc(100% - 40px);
+  width: 100%;
+  height: 100%;
   min-height: 0;
+  object-fit: contain;
   background: #000;
   border-radius: 4px;
 }
 
 /* An adopted player keeps its own bar, so the loop controls stay usable here.
-   Sized to the overlay rather than whatever the host page had it at. */
+   It is sized to fill the stage's height, with `aspect-ratio` set from the
+   video's own dimensions when the overlay opens. That keeps the box exactly as
+   wide as the picture, so the bar pinned to its bottom edge lines up with the
+   video instead of spanning the whole screen -- and, more importantly, stays
+   inside the viewport. An intrinsically sized box taller than the window put
+   the bar below the fold, which is why the controls could not be reached. */
 .ig-vc-theater-adopted {
-  max-width: 100%;
-  max-height: 100%;
+  height: 100% !important;
   width: auto !important;
-  height: auto !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
 }
 
 .ig-vc-theater-adopted video {
-  max-width: 100%;
-  max-height: calc(100vh - 60px);
-  width: auto !important;
-  height: auto !important;
-  object-fit: contain;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: none !important;
+  max-height: none !important;
+  object-fit: contain !important;
+}
+
+/* In theater mode the overlay is the whole screen, so revealing the bar only
+   when the pointer is inside the video box makes it feel broken on a portrait
+   video with wide letterboxing. Any pointer movement over the overlay counts. */
+.ig-vc-theater:hover .ig-vc-theater-adopted .ig-vc-bar {
+  pointer-events: auto;
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .ig-vc-theater-bar {
   width: 100%;
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -528,28 +550,6 @@
 .ig-vc-vol .ig-vc-fill {
   width: 100%;
   height: var(--v, 100%);
-}
-
-/* Cache button, which widens to show download progress as text */
-.ig-vc-cache {
-  width: 26px;
-}
-
-.ig-vc-cache.ig-vc-cache-text {
-  width: 30px;
-  font-size: 10px;
-  font-weight: 400;
-  text-align: center;
-  text-box: trim-both cap alphabetic;
-}
-
-.ig-vc-cache.active {
-  opacity: 1;
-  color: #fff;
-}
-
-.ig-vc-cache.unavailable {
-  opacity: 0.4;
 }
 
 /* Speed Button & Vertical List */

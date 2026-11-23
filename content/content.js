@@ -35,6 +35,15 @@
   const ZOOM_MAX_FRACTION = 0.9;
   const ZOOM_TARGET_FRACTION = 0.5;
   const ZOOM_MIN_WINDOW_SECONDS = 5;
+  // A B marker within this much of the end of the video would sit exactly on the
+  // track's right edge, where it cannot be grabbed. The timeline is extended
+  // past the end of the video by enough to leave this many pixels of track
+  // beyond it, the way a clip trimmer leaves post-roll.
+  // Long enough that dragging a handle writes once on settling rather than on
+  // every pointer move.
+  const URL_WRITE_DEBOUNCE_MS = 400;
+  const ZOOM_END_GUARD_SECONDS = 1;
+  const ZOOM_END_PADDING_PX = 20;
   const KEYS_LOOP_IN = new Set(['[', '{']);
   const KEYS_LOOP_OUT = new Set([']', '}']);
   const KEYS_LOOP_TOGGLE = new Set(['\\']);
@@ -68,6 +77,7 @@
     // Original thin-stroke glyph for the clip export control, matching the set above
     download: svg(`<path d="M12 4v11"/><path d="m7 12 5 5 5-5"/><path d="M5 20h14"/>`),
     loop: svg(`<path d="M3 11V9a4 4 0 0 1 4-4h11"/><path d="m15 2 3 3-3 3"/><path d="M21 13v2a4 4 0 0 1-4 4H6"/><path d="m9 22-3-3 3-3"/>`),
+    link: svg(`<path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 0 1 0 10h-2"/><path d="M8 12h8"/>`),
     restart: svg(`<path d="M6 5v14"/><path d="M20 5 9 12l11 7z"/>`)
   };
 
@@ -232,6 +242,9 @@
     if (theaterAdopted) {
       const { element, parent, nextSibling } = theaterAdopted;
       element.classList.remove('ig-vc-theater-adopted');
+      // The overlay set this to make the box track the picture; the page's own
+      // layout must not inherit it.
+      element.style.removeProperty('aspect-ratio');
       if (parent && parent.isConnected) parent.insertBefore(element, nextSibling || null);
       theaterAdopted = null;
     }
@@ -313,6 +326,38 @@
       theaterAdopted = { element: adopt, parent: adopt.parentElement, nextSibling: adopt.nextSibling };
       adopt.classList.add('ig-vc-theater-adopted');
       stage.appendChild(adopt);
+      // The stylesheet fills the stage's height; this supplies the width, by
+      // giving the box the video's own proportions. Without it the box is as
+      // wide as the stage, so the bar stretches across the letterboxing
+      // instead of sitting under the picture.
+      const fitAdoptedBox = () => {
+        if (!theaterAdopted || theaterAdopted.element !== adopt) return false;
+        const media = adopt.querySelector('video');
+        const w = media ? media.videoWidth : 0;
+        const h = media ? media.videoHeight : 0;
+        if (!w || !h) return false;
+        adopt.style.aspectRatio = `${w} / ${h}`;
+        return true;
+      };
+      // Dimensions are zero until the first frame is decoded, which on a paused
+      // video that was never played has not happened yet.
+      if (!fitAdoptedBox()) {
+        const media = adopt.querySelector('video');
+        if (media) {
+          const onReady = () => {
+            // Stop listening once the box is sized, and also if the overlay
+            // closed first: the video outlives the overlay, so a listener left
+            // on it would leak one pair per open.
+            const stale = !theaterAdopted || theaterAdopted.element !== adopt;
+            if (fitAdoptedBox() || stale) {
+              media.removeEventListener('loadedmetadata', onReady);
+              media.removeEventListener('resize', onReady);
+            }
+          };
+          media.addEventListener('loadedmetadata', onReady);
+          media.addEventListener('resize', onReady);
+        }
+      }
     } else if (src) {
       const held = document.createElement('video');
       held.className = 'ig-vc-theater-video';
@@ -499,11 +544,11 @@
           <button type="button" class="ig-vc-opt ig-vc-loop-in">A</button>
           <button type="button" class="ig-vc-opt ig-vc-loop-out">B</button>
           <button type="button" class="ig-vc-opt ig-vc-loop-clear">clr</button>
-          <button type="button" class="ig-vc-opt ig-vc-loop-link">link</button>
+          <button type="button" class="ig-vc-opt ig-vc-clip">clip</button>
           <button type="button" class="ig-vc-opt ig-vc-loop-zoom">fit</button>
         </div></div>
       </div>
-      <button type="button" class="ig-vc-btn ig-vc-clip"></button>
+      <button type="button" class="ig-vc-btn ig-vc-loop-link"></button>
       <button type="button" class="ig-vc-btn ig-vc-fs"></button>
     `;
 
@@ -513,13 +558,20 @@
     ].map((sel) => bar.querySelector(sel));
     const loopClearBtn = bar.querySelector('.ig-vc-loop-clear');
     const loopZoomBtn = bar.querySelector('.ig-vc-loop-zoom');
+    // Promoted to the bar: sharing a loop is the common action, exporting a
+    // clip the rare one, so the bar slot the clip button held is now the link.
     const loopLinkBtn = bar.querySelector('.ig-vc-loop-link');
     const hintEl = bar.querySelector('.ig-vc-hint');
     const loopSpeedOpts = bar.querySelectorAll('.ig-vc-loop-speed');
     const handleA = bar.querySelector('.ig-vc-handle-a');
     const handleB = bar.querySelector('.ig-vc-handle-b');
     const seekTrack = seekEl.querySelector('.ig-vc-track');
-    const speedOpts = bar.querySelectorAll('.ig-vc-opt');
+    // Only the general speed options, which are the ones carrying data-speed.
+    // Matching every .ig-vc-opt also caught the loop popup's buttons -- A, B,
+    // clr, link, fit and the loop speeds -- so clicking any of them ran
+    // saveSettings({ playbackRate: Number(undefined) }) and persisted NaN,
+    // silently resetting the user's chosen speed to 1x.
+    const speedOpts = bar.querySelectorAll('.ig-vc-opt[data-speed]');
 
     for (const evt of ['click', 'dblclick', 'contextmenu', 'pointerdown', 'pointerup', 'mousedown', 'mouseup', 'dragstart']) {
       bar.addEventListener(evt, (e) => { e.stopPropagation(); e.preventDefault(); });
@@ -609,6 +661,39 @@
     let zoomDisabled = false;
     let preLoopRate = null;
     let linkFeedbackTimer = null;
+    let urlWriteTimer = null;
+
+    // Reflects the current loop in the address bar, so the page can be
+    // bookmarked or copied from the browser rather than only through the link
+    // button. Debounced because dragging a handle changes the loop on every
+    // pointer move, and replaceState is not free.
+    //
+    // replaceState rather than assigning location.hash: assigning would push a
+    // history entry per edit and bury the back button under dozens of them.
+    // history.state is passed through untouched so neither site's router loses
+    // the state it put there.
+    //
+    // Facebook rewrites its own address bar and may strip this again; that is
+    // its prerogative and the link button remains the reliable route. On
+    // Instagram the fragment persists.
+    const writeLoopToUrl = () => {
+      clearTimeout(urlWriteTimer);
+      urlWriteTimer = setTimeout(() => {
+        urlWriteTimer = null;
+        try {
+          const range = loopRange();
+          const href = location.href;
+          const next = range
+            ? core.formatLoopUrl(href, range.start, range.end, settings.loopRate)
+            : href.split('#')[0];
+          if (!next || next === href) return;
+          history.replaceState(history.state, '', next);
+        } catch (e) {
+          // A site may forbid history access, or the URL may be rejected. The
+          // loop still works; only its reflection in the address bar is lost.
+        }
+      }, URL_WRITE_DEBOUNCE_MS);
+    };
 
     // Clip export state.
     let clipState = 'idle'; // idle | recording | unsupported | error
@@ -650,6 +735,8 @@
         maxFraction: ZOOM_MAX_FRACTION,
         targetFraction: ZOOM_TARGET_FRACTION,
         minWindowSeconds: ZOOM_MIN_WINDOW_SECONDS,
+        endGuardSeconds: ZOOM_END_GUARD_SECONDS,
+        endPaddingPx: ZOOM_END_PADDING_PX,
         disabled: zoomDisabled
       });
       return timelineView;
@@ -728,28 +815,34 @@
       const loopRate = core.clampPlaybackRate(settings.loopRate, 1);
       for (const opt of loopSpeedOpts) {
         opt.classList.toggle('active', Math.abs(Number(opt.dataset.loopSpeed) - loopRate) < 0.001);
+        // With no loop to apply to, the menu is only a preference for later.
+        // Saying so beats an "active" highlight on a control that cannot act.
+        opt.classList.toggle('unavailable', !range);
+        opt.title = range
+          ? `Play the loop at ${opt.dataset.loopSpeed}x`
+          : `Set A and B first — this will be the loop speed (${opt.dataset.loopSpeed}x)`;
       }
 
+      // A loop link only exists once a segment is marked, so the bar button is
+      // hidden rather than shown disabled when there is nothing to share. The
+      // feedback timer owns the label while it is reporting ok/err.
       if (linkFeedbackTimer === null) {
-        loopLinkBtn.textContent = 'link';
-        loopLinkBtn.classList.toggle('unavailable', !range);
-        loopLinkBtn.title = range
-          ? 'Copy a link to this video that opens at this loop'
-          : 'Set both A and B to copy a loop link';
+        loopLinkBtn.innerHTML = ICONS.link;
+        loopLinkBtn.classList.remove('ig-vc-clip-text');
+        loopLinkBtn.title = 'Copy a link to this video that opens at this loop';
       }
+      loopLinkBtn.classList.toggle('ig-vc-hidden', !range);
 
-      // The clip button only means anything once a segment is marked, so it is
-      // hidden rather than shown disabled when there is nothing to export.
-      clipBtn.classList.toggle('ig-vc-hidden', !range);
+      // Clip export moved into the loop menu: it is a rare action and it costs
+      // a bar slot the loop link uses far more often.
       if (clipState === 'recording') {
         clipBtn.textContent = clipProgress > 0 ? `${Math.round(clipProgress * 100)}%` : 'rec';
-        clipBtn.classList.add('ig-vc-clip-text');
       } else {
-        clipBtn.classList.remove('ig-vc-clip-text');
-        clipBtn.innerHTML = ICONS.download;
+        clipBtn.textContent = 'clip';
       }
       clipBtn.classList.toggle('active', clipState === 'recording');
-      clipBtn.classList.toggle('unavailable', clipState === 'unsupported' || clipState === 'error');
+      clipBtn.classList.toggle('unavailable',
+        !range || clipState === 'unsupported' || clipState === 'error');
       clipBtn.title = range ? (CLIP_TITLES[clipState] || CLIP_TITLES.idle) : CLIP_TITLES.unavailable;
 
       fsBtn.innerHTML = document.fullscreenElement?.contains(video) ? ICONS.minimize : ICONS.maximize;
@@ -926,6 +1019,8 @@
       clearTimeout(revealTimer);
       clearTimeout(linkFeedbackTimer);
       linkFeedbackTimer = null;
+      clearTimeout(urlWriteTimer);
+      urlWriteTimer = null;
       stopClipRecording();
       clipState = 'idle';
       stopLoopWatcher();
@@ -1100,6 +1195,7 @@
           if (wasPlaying) requestPlay();
           sync();
           updateTime();
+          writeLoopToUrl();
         });
       }
     };
@@ -1169,6 +1265,12 @@
       if (loopRange()) {
         looping = true;
         startLoopWatcher();
+        // A shared loop link is an invitation to watch that passage, so open on
+        // it. Without this the video sat wherever the site had left it, and the
+        // loop only engaged once playback happened to wander into range.
+        intendedFrame = null;
+        pendingDelta = 0;
+        beginSeek(loopIn);
       } else {
         loopIn = null;
         loopOut = null;
@@ -1374,6 +1476,7 @@
       revealBar(true);
       refreshHint();
       sync();
+      writeLoopToUrl();
       return true;
     };
 
@@ -1389,6 +1492,7 @@
       revealBar(true);
       refreshHint();
       sync();
+      writeLoopToUrl();
       return true;
     };
 
@@ -1424,6 +1528,9 @@
       refreshHint();
       sync();
       updateTime();
+      // Clearing the loop strips the fragment, so a copied URL does not carry
+      // a loop the page is no longer showing.
+      writeLoopToUrl();
       return true;
     };
 
@@ -1583,11 +1690,20 @@
       opt.addEventListener('click', () => {
         const rate = core.clampPlaybackRate(opt.dataset.loopSpeed, 1);
         saveSettings({ loopRate: rate });
-        // Applied immediately when a loop is already running, so the menu is a
-        // live control rather than a setting for next time.
-        if (looping) video.playbackRate = rate;
+        // Picking a practice speed is a request to hear the loop at that speed
+        // now. With a loop marked but the toggle off, this used to light the
+        // button and change nothing, so the control looked broken: it claimed
+        // an effect it had not had. Engage the loop instead.
+        if (loopRange()) {
+          if (!looping) {
+            looping = true;
+            startLoopWatcher();
+          }
+          video.playbackRate = rate;
+        }
         revealBar(true);
         sync();
+        writeLoopToUrl();
       });
     }
     clipBtn.addEventListener('click', recordClip);
@@ -1640,6 +1756,9 @@
         }
       }
       loopLinkBtn.textContent = copied ? 'ok' : 'err';
+      // The bar button is a 22px icon slot, so short feedback text needs the
+      // same widened treatment the clip progress label used.
+      loopLinkBtn.classList.add('ig-vc-clip-text');
       loopLinkBtn.title = copied ? `Copied ${url}` : `Could not reach the clipboard. The link is: ${url}`;
       clearTimeout(linkFeedbackTimer);
       linkFeedbackTimer = setTimeout(() => {
