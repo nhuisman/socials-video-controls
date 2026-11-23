@@ -173,20 +173,25 @@ Dismiss with `Esc`, the close button, or a click on the backdrop.
 | Site | Mode | What you get |
 | :--- | :--- | :--- |
 | Instagram | **Replace** | Full control bar: seek timeline, volume, speed, theater mode, A-B loop with clip export, frame stepping and jog scrubbing |
-| Facebook | **Augment** | Frame stepping, jog scrubbing and a frame readout only — Facebook's own player is left completely intact |
+| Facebook | **Replace** | The same, with Facebook's own progress slider hidden where the bar takes its place |
 
-The two modes exist because the sites differ. Instagram ships almost no video controls, so there is nothing to compete with and the bar replaces the gap. Facebook already ships a full player — progress bar, volume, fullscreen, quality — so duplicating it would be redundant and would fight their controls. On Facebook the extension contributes only what is missing and suppresses nothing.
+Both sites now get the same bar at the bottom of the player. Facebook ran in **augment** mode for a while — a stripped bar pinned to the top-left, offering only the frame readout and the loop controls, leaving their player untouched — because their player already ships a progress bar and volume, and because a volume set by the extension was reverted within about a second, which would have made our volume slider look broken.
 
-Everything site-specific lives in one `SITE_ADAPTERS` map in `content/content.js`: the player container, native-control detection, which paths to skip, and the mode. Adding another site means adding an adapter, not touching the rest.
+Re-measured on a live Reel, that no longer happens: `volume` holds at 0.3 across twelve samples over three seconds, and `playbackRate` and `muted` stick as they always did. With the reason gone, the asymmetry went with it.
+
+Everything site-specific lives in one `SITE_ADAPTERS` map in `content/content.js`: the player container, native-control detection, which paths to skip, which of the site's own controls to hide, and the mode. Augment mode is still implemented but no site uses it.
 
 ### Facebook specifics
 
 Verified against a live Reel rather than assumed:
 
 - **`data-video-id` is the anchor.** It is language-independent, already `position: relative`, contains exactly one video, and — unlike the ancestors above it — contains none of Facebook's own sliders. Walking the DOM the way the Instagram adapter does overshoots and reaches Facebook's progress slider, which would look like a competing player and suppress the extension entirely.
-- **Volume, mute and speed are Facebook's.** A volume written by the extension is reverted by their player within a second, so in augment mode the extension does not assert any of them. A jog scrub still mutes briefly, then restores whatever was actually in effect rather than the extension's saved preference.
+- **Their progress slider is hidden, and it is found structurally.** The bar occupies the bottom of the player, which is exactly where Facebook draws its own progress bar, so the two would sit on top of each other. Theirs is located by walking up from a slider whose `aria-valuetext` looks like a time position — not by its English label — and stopping while the ancestor still holds no buttons, no video, and less than a quarter of the player's height. On a live Reel that lands on a 654x20 strip containing nothing else; one level higher is the whole 670x1191 player with 29 buttons in it.
+- **Their mute button is left alone.** It is a 44x44 overlay in the *top*-left corner, so it does not collide with the bar, and the only reliable handle on it is its English label. Two mute controls is a better outcome than a positional guess that breaks on a redesign.
+- **Volume, mute and speed are now the extension's**, since Facebook stopped reverting volume. A jog scrub still mutes briefly and then restores the saved preference, as on Instagram.
 - **Frame stepping, jog scrubbing and frame-rate detection all work.** Seeks land and hold, Facebook does not fight `currentTime`, `playbackRate` sticks, and the frame rate measured off a real Reel came out at 30.0003 fps, snapping correctly to 30.
-- **Facebook sometimes re-pauses a video it did not start.** A bare `play()` with the extension uninvolved behaves identically, so this is their player's behaviour rather than an extension bug. It can make `Space` appear not to resume.
+- **Facebook re-pauses a video that no genuine gesture started.** A bare `play()` with the extension uninvolved behaves identically, so this is their player rather than an extension bug. Clicking the bar's play button works; a *scripted* click does not, which is why the browser suite uses a real dispatched click there.
+- **Hiding their controls must not be recomputed while theater mode is open.** The overlay lifts the player out of the page, so its original ancestors are briefly empty and every structural guard reads clean on elements that are about to have the video put back inside them. Measured: this hid the player itself, and closing the overlay restored the video into a `display: none` parent, collapsing it to 0x0. Facebook's page carries two players, so the guard has to be "any overlay is open", not "my own player is in it".
 
 ---
 

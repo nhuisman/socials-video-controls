@@ -245,6 +245,35 @@ async function clickBarControl(page, selector) {
   await sleep(500);
 }
 
+// Clicks a control with a real mouse click rather than el.click().
+//
+// Facebook re-pauses a video that was not started by a genuine user gesture: a
+// scripted .click() on the play button leaves paused true, and a bare
+// video.play() behaves identically, so this is the site's doing and not ours.
+// A dispatched mouse event carries the activation that makes playback stick.
+// Use this for anything gated on user activation; el.click() is fine for the
+// rest and avoids having to resolve coordinates.
+async function clickBarControlReal(page, selector) {
+  const box = await page.eval(barExpr(`
+    const el = bar.querySelector(${JSON.stringify(selector)});
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) return null;
+    return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+  `), { label: `locate ${selector}` });
+  if (!box) throw new Error(`control not found or not visible: ${selector}`);
+  await page.mouseMove(box.x, box.y);
+  await sleep(80);
+  await page.send('Input.dispatchMouseEvent', {
+    type: 'mousePressed', x: box.x, y: box.y, button: 'left', buttons: 1, clickCount: 1
+  });
+  await sleep(60);
+  await page.send('Input.dispatchMouseEvent', {
+    type: 'mouseReleased', x: box.x, y: box.y, button: 'left', buttons: 0, clickCount: 1
+  });
+  await sleep(600);
+}
+
 async function setCurrentTime(page, seconds) {
   await page.eval(`(() => { const v = document.querySelector('video'); if (v) v.currentTime = ${Number(seconds)}; return true; })()`, { label: 'seek' });
   await sleep(900);
@@ -335,7 +364,7 @@ module.exports = {
   groups,
   loadExtension, teardown,
   attachToPage, sleep, config,
-  hoverVideo, seekGeometry, barState, clickBarControl, setCurrentTime, markLoop,
+  hoverVideo, seekGeometry, barState, clickBarControl, clickBarControlReal, setCurrentTime, markLoop,
   openTheaterOverlay, waitForSeekable,
   stubDownloads, savedFilenames,
   barExpr, ACTIVE_BAR, VIEWPORT_EXPR

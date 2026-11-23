@@ -150,6 +150,11 @@ point of use in `cdp.js` and `harness.js`.
     nothing. Use `h.openTheaterOverlay`, which retries and waits for layout.
 11. **Recording from an unbuffered position stalls** and looks like a broken
     recorder. Call `h.waitForSeekable` before starting a clip.
+12. **Facebook re-pauses a video that no real gesture started.** A scripted
+    `el.click()` on the play button leaves `paused: true`, and a bare
+    `video.play()` does the same, so it is the site and not us. A real
+    dispatched click plays and keeps playing. Use `h.clickBarControlReal` for
+    anything gated on user activation.
 
 ## Rules for changes
 
@@ -175,10 +180,6 @@ point of use in `cdp.js` and `harness.js`.
 
 Live issues, so a red test here may be expected rather than new:
 
-- **Facebook runs in augment mode**, with its bar at the top of the screen
-  rather than the bottom, and most controls missing. Making it match Instagram
-  is outstanding work, and `theater.spec.js` currently fails on Facebook for
-  exactly this reason.
 - **Instagram's seek track collapses to ~48px** on a narrow (338px) player,
   which is too small to place markers accurately. Several marker specs skip on
   Instagram for this reason, reporting the measured track width. Fixing it
@@ -198,8 +199,20 @@ not have to rediscover:
   applies only to the fragment present on load: a `history.replaceState` write
   after the page settles persists on both sites. An earlier reading of this
   concluded writing was futile on Facebook, which was wrong.
-- Facebook **reverts volume** within about a second, and re-pauses videos it did
-  not start. `playbackRate` and `muted` stick.
+- Facebook **no longer reverts volume**: re-measured on a live Reel it holds
+  0.3 across twelve samples over three seconds. It used to revert within about
+  a second, which is why Facebook ran in augment mode; that constraint is gone.
+  It still re-pauses videos no real gesture started. `playbackRate` and `muted`
+  stick.
+- Facebook's progress slider is a **654x20** strip at the video's bottom edge
+  whose container holds no buttons, one level inside the 670x1191 player that
+  holds 29. That gap is what makes it safe to hide structurally. Their mute
+  button is a 44x44 overlay at the TOP-left, so it does not collide with our
+  bar and is left alone.
+- No site uses **augment mode** now. The mode is one field in the adapter, but
+  removing it means unpicking `augmenting` branches in `sync()`,
+  `stopLoopWatcher()` and `endScrub()`, which was not worth mixing into a
+  behaviour switch.
 - Instagram's player on a single-post page is **338px** wide with a seek track
   that collapses to **48px**. Facebook's reel player is **670px** with a 150px
   track.

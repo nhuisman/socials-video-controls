@@ -24,6 +24,61 @@ module.exports = (site) => {
       h.assert(state.order[1].includes('play'), `second control is ${state.order[1]}`);
     });
 
+    h.it('sits flush with the bottom of the player', async (page) => {
+      // Facebook used to run in augment mode, which pinned a stripped bar to
+      // the top-left. Both sites now carry the same bottom bar.
+      await h.hoverVideo(page);
+      const pos = await page.eval(h.barExpr(`
+        const video = document.querySelector('video');
+        const vr = video.getBoundingClientRect();
+        const br = bar.getBoundingClientRect();
+        return {
+          gapFromBottom: Math.round(vr.bottom - br.bottom),
+          barWidth: Math.round(br.width),
+          videoWidth: Math.round(vr.width),
+          opacity: Number(getComputedStyle(bar).opacity)
+        };
+      `), { label: 'bar position' });
+      h.close(pos.gapFromBottom, 0, 2, 'the bar should sit on the bottom edge of the player');
+      h.close(pos.barWidth, pos.videoWidth, 4, 'the bar should span the player width');
+      h.equal(pos.opacity, 1, 'and be visible while the player is hovered');
+    });
+
+    h.it('leaves no second seek control in the player', async (page) => {
+      // Our bar occupies the bottom of the player, which is exactly where
+      // Facebook draws its own progress slider, so theirs is hidden. Two seek
+      // controls stacked on each other is the bug this guards against.
+      await h.hoverVideo(page);
+      const foreign = await page.eval(h.barExpr(`
+        const player = bar.closest('.ig-vc-player');
+        return [...player.querySelectorAll('[role="slider"]')]
+          .filter((sl) => !sl.closest('.ig-vc-bar') && getComputedStyle(sl).display !== 'none')
+          .map((sl) => sl.getAttribute('aria-valuetext') || sl.getAttribute('aria-label') || '(unlabelled)');
+      `), { label: 'foreign sliders' });
+      h.assert(foreign.length === 0,
+        `the site's own seek control is still visible: ${JSON.stringify(foreign)}`);
+    });
+
+    h.it('plays and pauses from the bar', async (page) => {
+      // A real click, not el.click(): Facebook re-pauses a video that no
+      // genuine gesture started, so a scripted click leaves it paused and the
+      // play button looks broken when it is not.
+      await h.hoverVideo(page);
+      await h.setCurrentTime(page, 10);
+      const before = await h.barState(page);
+      h.equal(before.paused, true, 'starts paused');
+
+      await h.clickBarControlReal(page, '.ig-vc-play');
+      await h.sleep(900);
+      const playing = await h.barState(page);
+      h.equal(playing.paused, false, 'the play button should start playback');
+
+      await h.clickBarControlReal(page, '.ig-vc-play');
+      await h.sleep(600);
+      const paused = await h.barState(page);
+      h.equal(paused.paused, true, 'and stop it again');
+    });
+
     h.it('fits every control inside the bar', async (page) => {
       await h.hoverVideo(page);
       const fit = await page.eval(h.barExpr(`

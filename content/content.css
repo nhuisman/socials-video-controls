@@ -86,9 +86,21 @@
   transition: opacity 0.18s ease, transform 0.18s ease;
 }
 
-/* Augment mode (Facebook): the site already has a full player, so everything
-   except the frame readout and the loop controls is suppressed. Looping is the
-   point of the tool on a dance video, so it stays available on both sites. */
+/* The site's own control, hidden because ours occupies the same place. Applied
+   from JS, since these elements are found structurally rather than by any
+   selector that could live here. */
+.ig-vc-native-hidden {
+  display: none !important;
+}
+
+/* Augment mode: a stripped bar pinned to the top-left for a site that already
+   has a full player of its own. No site uses this now that Facebook runs in
+   replace mode; it is kept because the mode is one field in the adapter and
+   removing it would mean unpicking the augmenting branches in sync(),
+   stopLoopWatcher() and endScrub() in the same change as a behaviour switch.
+
+   It suppresses everything except the frame readout and the loop controls,
+   looping being the point of the tool on a dance video. */
 .ig-vc-bar.ig-vc-augment {
   inset: 0 auto auto 0;
   height: auto;

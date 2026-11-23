@@ -21,9 +21,9 @@ module.exports = {
     facebook: {
       label: 'Facebook',
       url: process.env.IGVC_FACEBOOK_URL || 'https://www.facebook.com/reel/1046756455114845',
-      // Facebook currently runs in augment mode: its own player stays, and the
-      // extension contributes only what it lacks. If that changes, change this.
-      expectedMode: 'augment'
+      // Facebook runs in replace mode, same as Instagram: the full bar at the
+      // bottom of the player with Facebook's own progress slider hidden.
+      expectedMode: 'replace'
     }
   },
 

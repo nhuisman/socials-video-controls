@@ -322,7 +322,18 @@ module.exports = (site) => {
             stillAdopted: Boolean(document.querySelector('.ig-vc-theater-adopted')),
             parentTag: container && container.parentElement ? container.parentElement.tagName : null,
             parentClass: container && container.parentElement ? container.parentElement.className : null,
-            barStillThere: Boolean(container && container.querySelector('.ig-vc-bar'))
+            barStillThere: Boolean(container && container.querySelector('.ig-vc-bar')),
+            // A connected video reporting 0x0 is sitting in a display:none
+            // subtree. That is how the native-control hiding broke this: it
+            // was recomputed while the player was lifted into the overlay, so
+            // its momentarily-empty ancestors looked like a control strip and
+            // one of them was hidden with the player then restored inside it.
+            videoSize: (() => {
+              const r = v.getBoundingClientRect();
+              return [Math.round(r.width), Math.round(r.height)];
+            })(),
+            hiddenAncestorOfVideo: [...document.querySelectorAll('.ig-vc-native-hidden')]
+              .some((el) => el.contains(v))
           };
         })()
       `, { label: 'after theater' });
@@ -332,6 +343,10 @@ module.exports = (site) => {
       h.equal(after.parentTag, before.parentTag, 'the player returns to the same parent element');
       h.equal(after.parentClass, before.parentClass, 'the player returns to the same place in the page');
       h.equal(after.barStillThere, true, 'the control bar comes back with it');
+      h.assert(after.videoSize[0] > 0 && after.videoSize[1] > 0,
+        `the video collapsed to ${after.videoSize.join('x')} after closing the overlay`);
+      h.equal(after.hiddenAncestorOfVideo, false,
+        'no hidden element should contain the restored video');
     });
 
     h.it('closes on a click outside the video', async (page) => {

@@ -404,7 +404,18 @@
     },
 
     facebook: {
-      mode: 'augment',
+      // Replace mode, same as Instagram: the full bar at the bottom of the
+      // player with Facebook's own progress slider hidden. This was augment
+      // mode -- a stripped bar pinned to the top-left, leaving their controls
+      // alone -- which kept the loop tools available without fighting the site
+      // but left Facebook feeling like a second-class citizen.
+      //
+      // The reason augment mode was chosen no longer holds. Facebook used to
+      // revert `volume` within about a second, which would have made our volume
+      // slider look broken; re-measured on a live Reel it now holds 0.3 across
+      // twelve samples over three seconds, and `playbackRate` and `muted` stick
+      // as they always did.
+      mode: 'replace',
       // Verified against a live Reel: data-video-id is the stable per-video
       // anchor, it is already position:relative, it contains exactly one video
       // and — unlike the ancestors above it — none of Facebook's own sliders.
@@ -433,6 +444,42 @@
           cur = cur.parentElement;
         }
         return null;
+      },
+
+      // Our bar sits at the bottom of the player, which is exactly where
+      // Facebook draws its progress slider -- measured at the video's last
+      // 20px -- so the two would overlap. Theirs is hidden.
+      //
+      // Found structurally rather than by aria-label, so it survives a
+      // non-English UI: from the time-like slider, walk up while the ancestor
+      // contains no buttons and no video. On a live Reel that stops at a
+      // 654x20 strip holding nothing but the progress bar; one level higher is
+      // the whole 670x1191 player with 29 buttons in it, which must not be
+      // touched.
+      //
+      // Their mute button is deliberately left alone: it is a 44x44 overlay in
+      // the TOP-left corner, so it does not collide with our bar, and the only
+      // handle on it is its English label.
+      nativeControlsToHide(video, container) {
+        const slider = this.nativeSeekSlider(video, container);
+        if (!slider) return [];
+        // Only ascend while the ancestor is still plainly just the progress
+        // strip. The height ceiling is the load-bearing guard: the strip is
+        // 20px of a 1191px player (measured), so anything approaching the
+        // player's own height is not a control strip whatever else it contains.
+        const videoHeight = video.getBoundingClientRect().height || 0;
+        const ceiling = videoHeight > 0 ? videoHeight * 0.25 : Infinity;
+        let outermost = slider;
+        let cur = slider.parentElement;
+        for (let i = 0; i < 6 && cur && cur !== document.body; i++) {
+          if (cur.contains(video)) break;
+          if (cur.querySelector('video')) break;
+          if (cur.querySelector('[role="button"], button')) break;
+          if (cur.getBoundingClientRect().height > ceiling) break;
+          outermost = cur;
+          cur = cur.parentElement;
+        }
+        return [outermost];
       }
     }
   };
@@ -1009,6 +1056,7 @@
           }
         }
         bindNativeSlider();
+        hideNativeControls();
       }
     };
 
@@ -1016,6 +1064,7 @@
       ro.disconnect();
       ac.abort();
       frameClock.stop();
+      revealNativeControls();
       clearTimeout(revealTimer);
       clearTimeout(linkFeedbackTimer);
       linkFeedbackTimer = null;
@@ -1655,6 +1704,52 @@
       dragDirty = false;
       if (wasPlaying) requestPlay();
       updateTime();
+    };
+
+    // Hides the site's own controls where ours take their place. Re-run on every
+    // mount for the same reason bindNativeSlider is: Facebook mounts these
+    // lazily and swaps the elements out, so a one-shot hide at startup is
+    // undone the first time it re-renders.
+    let hiddenNative = [];
+    const hideNativeControls = () => {
+      if (augmenting || !site.nativeControlsToHide) return;
+      // Never recompute while ANY theater overlay is open. A relocated player
+      // leaves its original ancestors momentarily empty, so every structural
+      // guard below reads clean on elements that are about to have a video put
+      // back inside them. Measured: this hid the player itself, and closing
+      // the overlay restored the video into a display:none parent, collapsing
+      // it to 0x0.
+      //
+      // The check is deliberately global rather than "is MY container
+      // adopted". Facebook's page carries two players, and the second one's
+      // walk normally stops at the ancestor holding both videos -- but with
+      // the first player lifted into the overlay that ancestor holds only one,
+      // so the walk climbs past its own boundary and hides something belonging
+      // to the other player.
+      if (theaterEl) return;
+      const found = (site.nativeControlsToHide(video, currentContainer || resolvePlayerContainer(video)) || [])
+        // A control strip never contains the video, our own bar, or the whole
+        // player's worth of buttons. Re-checked here rather than trusted from
+        // the walk, because the walk can only see the DOM as it is at the time.
+        .filter((el) => el
+          && el.isConnected
+          && !el.querySelector('video')
+          && !el.querySelector('.ig-vc-bar')
+          && !el.contains(video));
+      // Nothing found usually means they have not mounted yet, so anything
+      // already hidden is left hidden rather than being revealed and re-hidden
+      // on the next mount, which would flicker their progress bar back.
+      if (!found.length) return;
+      for (const el of hiddenNative) {
+        if (!found.includes(el)) el.classList.remove('ig-vc-native-hidden');
+      }
+      for (const el of found) el.classList.add('ig-vc-native-hidden');
+      hiddenNative = found;
+    };
+
+    const revealNativeControls = () => {
+      for (const el of hiddenNative) el.classList.remove('ig-vc-native-hidden');
+      hiddenNative = [];
     };
 
     // Facebook mounts the slider lazily and can replace the element, so this is
