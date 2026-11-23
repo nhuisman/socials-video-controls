@@ -270,6 +270,31 @@ the import.
 If you port more from that project, do the same: diff against the commit in its
 `UPSTREAM_COMMIT`, never copy the files.
 
+## When a bug does not reproduce in Chromium
+
+This suite drives Chromium only. The extension's users are increasingly on
+WebKit, where several reported bugs have lived, and four consecutive reports
+have failed to reproduce here.
+
+**Do not ship a speculative fix for one.** It was tried: a guard was added for
+an unreproducible "play button does nothing" report, the reporter came back
+saying the symptom was worse, and the guard had to be reverted. An unverified
+fix in a file this size costs more than the bug, because it adds a path nobody
+has observed and makes the next report harder to reason about.
+
+Instead:
+
+1. Reproduce the MECHANISM, not the bug. `fastSeek` was found this way: the
+   code branched on an API Chromium lacks, so a stand-in was installed and the
+   broken branch measured (0.89s of drift). That is a fix with evidence behind
+   it, not a guess.
+2. Ask the reporter for the state when it happens. `tools/diagnose.js` is a
+   paste-into-the-console recorder that logs every media event, the bar's own
+   state, and the stack of whatever called `play()` or `pause()`. It turns their
+   browser into the measuring instrument.
+3. Say plainly that it does not reproduce, and what that means, rather than
+   implying a fix is verified when it is not.
+
 ## Known flakes
 
 - **`bar layout > plays and pauses from the bar` on Facebook** can fail in a

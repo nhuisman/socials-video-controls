@@ -1671,9 +1671,6 @@
       return true;
     };
 
-    // True between asking for a restart seek and seeing playback survive it.
-    let loopRestartWasPlaying = false;
-
     const loopTick = () => {
       loopRafHandle = null;
       if (!looping) return;
@@ -1682,20 +1679,7 @@
           && core.loopShouldRestart({ currentTime: video.currentTime, loopEnd: range.end, paused: video.paused })) {
         intendedFrame = null;
         pendingDelta = 0;
-        loopRestartWasPlaying = true;
         beginSeek(range.start);
-      } else if (loopRestartWasPlaying) {
-        // A restart seek is a currentTime write issued the instant playback
-        // reaches B, and resuming from a position at or past B triggers one
-        // immediately. Some engines drop out of playing when seeked that
-        // early, which looks exactly like the play button doing nothing: the
-        // video starts, jumps back to A, and sits there paused.
-        //
-        // So playback is re-asserted once, only after a restart we issued while
-        // playing. Not reproducible under Chromium, which survives the seek, so
-        // this guards the behaviour rather than fixing a measured failure here.
-        loopRestartWasPlaying = false;
-        if (video.paused && !video.ended) video.play().catch(() => {});
       }
       loopRafHandle = requestAnimationFrame(loopTick);
     };
