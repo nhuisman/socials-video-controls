@@ -66,8 +66,9 @@ That exercises WebKit — the same engine Orion uses — without an iOS install.
 `dist/socials-video-controls.user.js` is **generated**. Do not edit it:
 
 ```bash
-node tools/build-userscript.js            # rebuild after changing content/
-node tools/build-userscript.js --check     # fail if the committed copy is stale
+node tools/build-userscript.js                        # rebuild after changing content/
+node tools/build-userscript.js --check                 # fail if the committed copy is stale
+node tools/build-userscript.js --dest ~/path/to/dir    # rebuild and copy into your manager's directory
 ```
 
 The unit suite runs `--check`, so a stale bundle fails the build rather than

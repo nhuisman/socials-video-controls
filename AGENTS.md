@@ -164,9 +164,13 @@ point of use in `cdp.js` and `harness.js`.
 cannot load an unpacked extension. It is **generated** from `content/`:
 
 ```bash
-node tools/build-userscript.js            # rebuild
-node tools/build-userscript.js --check     # non-zero if the committed copy is stale
+node tools/build-userscript.js                        # rebuild
+node tools/build-userscript.js --check                 # non-zero if the committed copy is stale
+node tools/build-userscript.js --dest ~/path/to/dir    # also copy into a manager's directory
 ```
+
+`--dest` (or `IGVC_USERSCRIPT_DEST`) saves a manual copy while iterating. Never
+commit a personal path for it.
 
 **If you change anything in `content/`, rebuild it.** The unit suite runs
 `--check`, so forgetting fails `node tests/run.js` with the command to fix it.

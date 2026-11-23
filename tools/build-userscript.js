@@ -224,3 +224,26 @@ fs.mkdirSync(OUT_DIR, { recursive: true });
 fs.writeFileSync(OUT_FILE, bundle);
 console.log(`wrote ${rel}  (${kb} KB, v${manifest.version})`);
 console.log(`  matches: ${manifest.host_permissions.join(', ')}`);
+
+// Optionally drop a copy straight into a userscript manager's directory, so
+// iterating does not need a manual copy after every build. Opt-in and taken
+// from the environment or the command line, never a path committed here:
+//
+//   node tools/build-userscript.js --dest ~/Documents/scripts
+//   IGVC_USERSCRIPT_DEST=~/Documents/scripts node tools/build-userscript.js
+const destFlagIndex = process.argv.indexOf('--dest');
+const destArg = destFlagIndex >= 0 ? process.argv[destFlagIndex + 1] : process.env.IGVC_USERSCRIPT_DEST;
+if (destArg) {
+  // A leading ~ is not expanded by the shell when the value comes from an
+  // environment variable or a quoted argument.
+  const dest = destArg.startsWith('~')
+    ? path.join(require('os').homedir(), destArg.slice(1))
+    : destArg;
+  if (!fs.existsSync(dest) || !fs.statSync(dest).isDirectory()) {
+    console.error(`  --dest is not a directory: ${dest}`);
+    process.exit(1);
+  }
+  const copied = path.join(dest, path.basename(OUT_FILE));
+  fs.writeFileSync(copied, bundle);
+  console.log(`  copied to ${copied}`);
+}
