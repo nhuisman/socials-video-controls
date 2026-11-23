@@ -91,6 +91,9 @@ async function resetBetweenTests(page) {
       delete window.__igvcWindows;
       delete window.__igvcAudio;
       document.getElementById('__igvc_probe_input')?.remove();
+      for (const el of document.querySelectorAll('.ig-vc-test-target')) {
+        el.classList.remove('ig-vc-test-target');
+      }
       return true;
     })()
   `, { label: 'reset' }).catch(() => {});

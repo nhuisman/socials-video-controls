@@ -125,6 +125,14 @@ point of use in `cdp.js` and `harness.js`.
    to the engaged player via `h.barExpr` / `h.ACTIVE_BAR`. Not doing this
    produced three false failures: ten speed options instead of five, a clip
    button reported hidden, markers reported unset.
+
+   Resolving the bar afresh on each call is not enough, because every signal
+   for "engaged" expires: the keyboard reveal lapses after 4s, and the last
+   resort is the first bar in the document. Facebook grows a **second** player
+   after load (`barCount: 2`), so a test read one bar while the keys acted on
+   another and reported a marker handle as missing when it was displayed. So
+   `hoverVideo` now tags its player `.ig-vc-test-target` and `ACTIVE_BAR`
+   prefers that tag. Always reach a player through `h.hoverVideo`.
 6. **`innerWidth` includes the scrollbar; a fixed element's rect does not.**
    Comparing them makes a correct overlay look 15px narrow. Use
    `h.VIEWPORT_EXPR` (`documentElement.clientWidth`).

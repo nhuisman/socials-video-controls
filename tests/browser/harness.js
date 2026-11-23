@@ -115,6 +115,7 @@ async function teardown(page) {
       window.__igVcCleanup && window.__igVcCleanup();
       document.getElementById('__igvc_test_css')?.remove();
       for (const el of document.querySelectorAll('.ig-vc-theater, .ig-vc-bar')) el.remove();
+      for (const el of document.querySelectorAll('.ig-vc-test-target')) el.classList.remove('ig-vc-test-target');
       for (const el of document.querySelectorAll('.ig-vc-player')) el.classList.remove('ig-vc-player', 'ig-vc-kb');
       const video = document.querySelector('video');
       if (video) { video.pause(); video.playbackRate = 1; video.muted = true; }
@@ -133,8 +134,16 @@ async function teardown(page) {
 // must be scoped to the engaged player, or a spec reads one bar while the keys
 // act on another — which produced three separate false failures during
 // development.
+// hoverVideo tags the player it hovered, and that tag wins over everything
+// else. Re-resolving by :hover or .ig-vc-kb on every call is not stable: the
+// keyboard reveal lapses after 4s, Facebook grows a second player after load,
+// and the fallback is "the first bar in the document" -- which is how a test
+// came to read one bar while the keys acted on another, reporting a marker
+// handle as missing when it was displayed on the bar it was not looking at.
 const ACTIVE_BAR = `
   (() => {
+    const tagged = document.querySelector('.ig-vc-test-target .ig-vc-bar');
+    if (tagged) return tagged;
     const engaged = document.querySelector('.ig-vc-player.ig-vc-kb .ig-vc-bar')
       || document.querySelector('.ig-vc-player:hover .ig-vc-bar');
     return engaged || document.querySelector('.ig-vc-bar');
@@ -154,6 +163,14 @@ async function hoverVideo(page) {
       const video = document.querySelector('video');
       if (!video) return null;
       video.pause();
+      // Mark this player as the one every later query should read, so a second
+      // player appearing on the page cannot redirect the assertions. This is
+      // test bookkeeping only: the bar is still revealed by a real hover, not
+      // by a class added here.
+      for (const el of document.querySelectorAll('.ig-vc-test-target')) {
+        el.classList.remove('ig-vc-test-target');
+      }
+      video.closest('.ig-vc-player')?.classList.add('ig-vc-test-target');
       const r = video.getBoundingClientRect();
       return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
     })()
