@@ -88,7 +88,7 @@ Until enough samples arrive, or on browsers without `requestVideoFrameCallback`,
 
 Assigning `currentTime` while a previous seek is still running makes the browser abandon and restart it, so a naive handler that seeks once per key-repeat event spends its time cancelling its own work. Instead, at most one seek is ever in flight: further presses accumulate into a pending delta and collapse into a single next seek once the current one lands. A burst of 50 presses therefore issues two seeks rather than fifty, and because intent is tracked separately from `currentTime` — which lags behind during a burst — no press is dropped and the position stays exact.
 
-The seek bar also draws the downloaded range behind the playback fill, so stepping past the end of the buffer is visible on screen rather than just feeling slow.
+The seek bar also draws the buffered range behind the playback fill, so stepping past the end of the buffer is visible on screen rather than just feeling slow.
 
 ### Why holding uses a different mechanism
 
@@ -100,7 +100,7 @@ So **forward holding does not seek at all.** It sets a low `playbackRate` and si
 
 **Backward holding cannot use that trick,** because no browser implements negative `playbackRate`. It therefore remains seek-based, but paced deliberately: a time accumulator issues steps at even wall-clock intervals rather than as fast as the decoder will go, which is what actually reads as smooth. When a seek is still decoding, the backlog is dropped instead of banked — falling behind makes the scrub move slower, where banking would make it lurch when the decoder caught up. A long stall is capped so it can never produce an unbounded jump.
 
-Expect backward scrubbing to look choppier than forward. That asymmetry is inherent to how video compression and browser decoders work, not something the extension can tune away. Pre-downloading the video with the cache button removes network waits during a scrub but does not change decode cost.
+Expect backward scrubbing to look choppier than forward. That asymmetry is inherent to how video compression and browser decoders work, not something the extension can tune away. There is no cache button to help here: both sites stream through MediaSource, so there is no file to pre-download.
 
 Motion is also driven from an internal timer rather than from OS key-repeat events, which avoids the 300–500 ms repeat delay and the per-machine repeat rate that would otherwise set the scrub speed.
 
@@ -117,13 +117,13 @@ Supporting details:
 - **`fastSeek` is used when available.** It trades precision for speed, which is the right trade mid-drag, with the exact seek saved for the release. Firefox implements it; Chrome does not, so there it falls back to exact seeks throughout.
 - **A stalled seek cannot freeze the bar.** A seek into unbuffered data may pend indefinitely and never report completion. After a short grace period a new seek is allowed to supersede it, so one stall cannot wedge dragging or stepping permanently.
 
-Dragging will not feel as smooth as the forward jog scrub, which avoids seeking altogether by letting the decoder play. A drag has to seek, so it is bounded by keyframe spacing and dragging backwards feels heavier than forwards. Pre-downloading with the cache button removes network latency from each seek, though not decode cost.
+Dragging will not feel as smooth as the forward jog scrub, which avoids seeking altogether by letting the decoder play. A drag has to seek, so it is bounded by keyframe spacing and dragging backwards feels heavier than forwards. There is no way to pre-download around this, since both sites stream through MediaSource.
 
 ---
 
 ## Exporting a Clip
 
-With a loop marked, the download button saves that segment as a video file and
+With a loop marked, **clip** in the loop menu saves that segment as a video file and
 opens it in theater mode so the move can be studied straight away.
 
 Recording is **real time by necessity**. Both sites stream through Media Source
@@ -199,24 +199,30 @@ The workflow this was built for: watch a dance video, find a move, bracket it, a
 3. Refine with the arrow keys. Step to the exact frame you want and press `[` or `]` again to move that marker.
 4. Press `Home` at any time to jump back to the start, whether or not looping is on.
 5. `\` stops and starts looping; `|` clears both markers.
-6. Pick a **loop speed** from the menu on the loop button — `0.1x`, `0.25x`, `0.5x`, `0.75x` or `1x`. Studying a fast move at a quarter speed is the point of the whole feature.
-7. Press **link** in the loop popup to copy a URL that opens the video at this loop, at this speed. Open that URL later, or send it to someone, and the markers are placed for you.
+6. Pick a **loop speed** from the menu on the loop button — `0.1x`, `0.25x`, `0.5x`, `0.75x` or `1x`. Studying a fast move at a quarter speed is the point of the whole feature. Choosing a speed starts the loop if it was stopped, since picking a practice speed means you want to hear it.
+7. Press the **link** button on the bar to copy a URL that opens the video at this loop, at this speed. Open that URL later, or send it to someone, and the video opens on the move with the markers already placed. The button appears once both markers are set.
 
 ### Sharing a loop by link
 
-The `link` button copies the page URL with the loop appended as a fragment:
+The **link** button on the control bar copies the page URL with the loop appended as a fragment:
 
 ```
 https://www.instagram.com/p/Dfo3mUzgJQJ/#loop=30,34.5,0.25
 ```
 
-Start, end, and an optional practice speed. The speed is left out when it is `1x`. Opening a URL like this places the markers, starts looping, and applies the speed. Times are clamped to the video, so a link naming times past the end of a shorter video degrades rather than breaking, and markers snap to frame centres, which can shift a shared time by up to half a frame.
+Start, end, and an optional practice speed. The speed is left out when it is `1x`. Opening a URL like this places the markers, seeks to A, starts looping, and applies the speed, so the link lands on the move rather than at the top of the video. Times are clamped to the video, so a link naming times past the end of a shorter video degrades rather than breaking, and markers snap to frame centres, which can shift a shared time by up to half a frame.
 
 A link applies to the first player that can take it, then is consumed — so opening a link while a feed is on screen does not stamp the same loop onto every video in it.
 
 **This required reading the URL earlier than the rest of the extension runs.** Facebook rewrites the address bar about 1.3 seconds into page load and removes the fragment, comfortably before `DOMContentLoaded`. A script at `document_idle`, where everything else here runs, would read an address that has already been cleaned. So `content/capture-url.js` runs at `document_start`, does nothing but record the URL, and exits; the rest of the extension reads that recorded copy. Instagram keeps the fragment indefinitely, but reading early is correct on both and avoids a per-site special case.
 
-The consequence is that **writing** the fragment back is not attempted. On Instagram it would survive; on Facebook it would be wiped within seconds, so the button copies to the clipboard rather than reflecting the loop in the address bar. If the clipboard refuses — it needs a trusted click and a focused document — the link appears in the button's tooltip instead so it is never lost.
+**The address bar follows the loop.** Setting or moving a marker, trimming a handle, or changing the practice speed rewrites the fragment in place, so the page can be bookmarked or copied straight from the browser. Clearing the loop removes it again, so a copied URL never carries a loop the page is no longer showing.
+
+This is done with `history.replaceState`, not by assigning `location.hash`. Assigning would push a history entry per edit and bury the back button under a few minutes of trimming; measured, three loop edits now add **zero** entries. Writes are debounced, because dragging a handle changes the loop on every pointer move.
+
+Facebook's stripping turned out to apply only to the fragment it finds **on load**, not to later writes: once the page has settled, a `replaceState` fragment persists there as it does on Instagram. That was worth measuring rather than assuming, since an earlier version of this README concluded the opposite and skipped the feature on that basis.
+
+The **link** button is still the route when you want the URL on the clipboard rather than in the address bar. If the clipboard refuses — it needs a trusted click and a focused document — the link appears in the button's tooltip instead so it is never lost.
 
 ### Loop speed
 
@@ -248,6 +254,9 @@ The marked segment is painted on the seek bar with a draggable handle at each en
   An earlier version compared the handle gap against an absolute 190 pixels. On a seek bar only 130–180 pixels wide that target can never be met, so "needs more zoom" stayed true and the window tracked the span on every single call — the bar appeared to reset and skip around while a handle was being dragged closer. The thresholds are now fractions of the bar, which are achievable by construction: a zoom targets 50% and re-triggers below 20%, so each one settles. The absolute pixel figure survives only as a guard that suppresses zooming on a bar wide enough not to need it.
 
 - **The window is frozen for the duration of a drag.** Moving a marker changes the window, which changes the pointer-to-time mapping, which moves the handle away from the pointer — a feedback loop. The window is re-evaluated once on release instead, so a drag never rescales underneath you. Walking a marker 11 seconds inwards across 45 positions now changes the window three times rather than 45.
+- **The timeline runs a little past the end of the video.** With B inside a second of the end, the window would stop exactly at the media, putting the B handle on the track's right edge with nothing after it — measured at **1 pixel** of track beyond it, which is not something you can grab. The window is now extended past the end of the video by enough to leave about 20 pixels of empty track, the post-roll a clip trimmer leaves for the same reason.
+
+  Widening the window **in time** was the first attempt and it was wrong. A 20-second window does buy a wider view, but the window still ends at the media, so B stays on the edge, and the markers are squeezed together on the way: measured at 45 pixels apart mid-video against **11** at the end. Padding in pixels past the media keeps the gap at 39 and puts 21 pixels behind B.
 - The track is tinted and bracketed while zoomed, since it is then showing a slice rather than the whole video, and the `fit` / `full` entry in the loop popup switches it off for coarse navigation.
 - Everything on the bar reads through the window, so while zoomed the playhead drag is fine-grained too.
 - A handle cannot pass its partner: dragging the in point towards the out point stops three frames short, and vice versa.
@@ -264,7 +273,7 @@ On Facebook the extension shows a compact 150px trim timeline for this purpose. 
 - **Very short loops are refused.** A range under three frames thrashes the decoder and shows nothing useful, so the loop toggle stays disabled until the span is worth playing.
 - **Restarts are paced** through the same single-seek-in-flight path as everything else, so a tight loop cannot issue a new seek before the last one landed.
 - **Slow it down.** The loop speed menu on the loop button is the control for this. On Instagram the bar's separate speed control still sets the general playback speed; on Facebook that one belongs to their player.
-- **Export it.** The download button saves the marked segment and opens it in theater mode.
+- **Export it.** **clip** in the loop menu saves the marked segment and opens it in theater mode.
 - Markers belong to the video. They clear when the player loads something else, since Instagram and Facebook both recycle `<video>` elements between posts.
 
 ---
@@ -283,7 +292,15 @@ instagram-video-control/
 │   ├── content.js        # Controller: DOM observer, timeline, volume, speeds
 │   └── content.css       # Control bar layout, transitions, and slider styles
 ├── tests/
-│   └── run.js            # Test suite (`node tests/run.js`, no dependencies)
+│   ├── run.js            # Unit suite (`node tests/run.js`, no browser)
+│   └── browser/          # Browser suite (drives a real Chrome over CDP)
+│       ├── launch-chrome.sh
+│       ├── run.js
+│       ├── cdp.js        # Minimal DevTools Protocol client
+│       ├── harness.js    # Extension loading and page helpers
+│       ├── config.js     # Fixture URLs and timings
+│       └── specs/        # One file per area under test
+├── AGENTS.md             # Instructions for AI agents working on this code
 ├── PRIVACY.md            # Privacy Policy
 ├── LICENSE               # MIT License
 └── README.md
@@ -292,30 +309,70 @@ instagram-video-control/
 - **MutationObserver**: Monitors dynamic DOM mutations to attach controls seamlessly to freshly loaded videos or virtualized feeds without layout shifts.
 - **Passive Listeners & RequestAnimationFrame**: Smooth timeline scrubbing and minimal CPU idle overhead.
 - **Lucide Icons**: Built-in SVG vector paths; zero external web font or asset loading.
-- **`content/core.js`**: Holds the logic with non-obvious invariants — frame indexing, frame-rate snapping, seek coalescing, scrub pacing, cache eligibility — deliberately free of DOM and video-element access. `content.js` keeps the orchestration that cannot be separated from a `<video>`. The split exists so the test suite can exercise the shipping code rather than a copy of it.
+- **`content/core.js`**: Holds the logic with non-obvious invariants — frame indexing, frame-rate snapping, seek coalescing, scrub pacing, loop and marker clamping, timeline zoom windowing, URL loop parsing — deliberately free of DOM and video-element access. `content.js` keeps the orchestration that cannot be separated from a `<video>`. The split exists so the test suite can exercise the shipping code rather than a copy of it.
 
 ---
 
 ## Tests
+
+Two tiers. The first needs nothing; the second needs a browser.
+
+### Unit suite — run it always
 
 ```bash
 node tests/run.js           # run everything
 node tests/run.js frame     # run only groups matching "frame"
 ```
 
-No dependencies and no build step. The suite loads `content/core.js` directly, so it tests the same code the extension ships. Logic that needs a `<video>` is driven through a fake element whose seeks complete only when a test says so, which is what makes the one-seek-in-flight sequencing observable.
+No dependencies and no build step, and it finishes in well under a second. It
+loads `content/core.js` directly, so it tests the same code the extension
+ships. Logic that needs a `<video>` is driven through a fake element whose
+seeks complete only when a test says so, which is what makes the
+one-seek-in-flight sequencing observable.
 
-Covered: time formatting, frame-rate snapping, frame-index and frame-centre math, frame-step coalescing, drag-seek coalescing and release, the stall watchdog, scrub pacing, buffered-range lookup, and cache eligibility.
+Covered: time formatting, frame-rate snapping, frame-index and frame-centre
+math, frame-step coalescing, drag-seek coalescing and release, the stall
+watchdog, scrub pacing, buffered-range lookup, loop normalisation and marker
+clamping, timeline zoom windowing, URL loop parsing and formatting, and clip
+filename construction.
 
-**Not covered**, because it cannot be separated from a real element or DOM without a headless browser:
+### Browser suite — run it before a release
 
-- Blob lifetime ordering in the cache — the `src` must move off a blob URL before that URL is revoked, or playback breaks
-- Forward jog scrub, which sets `playbackRate` and plays rather than seeking
-- Restoring rate and mute after a scrub, and `sync()` not fighting them
-- Which player the keyboard acts on, and typing-context suppression
-- Player discovery, native-control detection, bar mounting, and recycled-element teardown
+```bash
+tests/browser/launch-chrome.sh      # once, in a separate terminal
+node tests/browser/run.js           # everything, both sites
+node tests/browser/run.js --site=instagram
+node tests/browser/run.js theater   # filter by group or test name
+node tests/browser/run.js --list    # show what would run
+```
 
-Those need manual verification in the browser. The same list is repeated at the bottom of `tests/run.js` so it stays with the code.
+This drives a real Chrome against real Instagram and Facebook posts over the
+DevTools Protocol, which is the only way to test the parts that depend on the
+sites themselves. It takes minutes and needs a signed-in profile. The launcher
+uses a dedicated `--user-data-dir`, because Chrome 136 and later silently
+ignore `--remote-debugging-port` on the default profile, and binds to
+`127.0.0.1` only.
+
+It covers what the unit suite structurally cannot:
+
+- Control bar layout on a real player, including that nothing is clipped off a
+  narrow bar
+- Which player the keyboard acts on, typing-context suppression, and silence
+  while the arrow keys drive
+- Marker placement, trim-handle dragging, and that the timeline stays frozen
+  mid-drag
+- That a loop actually confines playback, wraps at B, and holds its own rate
+- That `capture-url.js` wins the race against Facebook stripping the URL
+  fragment, roughly 1.3 seconds after navigation
+- Theater mode sizing, bar reachability, and restoring the player on close
+- Clip recording end to end, including the saved filename
+
+A missing or private fixture video **skips** rather than fails, and skips are
+listed separately at the end of a run.
+
+Still not automated: entering real fullscreen, which Chrome refuses to grant to
+synthetic input, and anything requiring a clipboard read. `AGENTS.md` records
+why, along with the harness traps worth knowing before writing a new spec.
 
 ---
 
@@ -326,8 +383,11 @@ This extension requests only the minimum host and API permissions strictly neces
 | Permission | Justification |
 | :--- | :--- |
 | `storage` | Saves your volume level, mute state, and speed preference locally via `chrome.storage.local`. |
-| `scripting` | Injects controls into already-open Instagram tabs when the extension is updated or installed. |
-| `*://*.instagram.com/*` | Restricts script execution exclusively to Instagram web domains. |
+| `scripting` | Injects controls into already-open tabs when the extension is updated or installed. |
+| `*://*.instagram.com/*` | Restricts script execution to Instagram web domains. |
+| `*://*.facebook.com/*` | Restricts script execution to Facebook web domains. |
+
+The extension makes no network requests of any kind.
 
 Read the full [Privacy Policy](PRIVACY.md).
 

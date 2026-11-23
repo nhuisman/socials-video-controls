@@ -1,0 +1,228 @@
+'use strict';
+ 
+// Looping, which is the whole point of the extension: hold a few seconds of a
+// dance move on repeat, slow it down, and jump back to the start of it.
+//
+// These tests watch real playback rather than asserting on state flags,
+// because the loop is enforced by a watcher racing the video's own clock.
+//
+// One thing to know before editing: setting B with `]` STARTS the loop. There
+// is no separate "now begin looping" step, and an early version of this file
+// pressed `\` after marking, which switched off the loop it had just created
+// and made three tests fail for a reason that had nothing to do with looping.
+// `\` is a toggle; treat it as one.
+
+const h = require('../harness');
+
+const LOOP_START = 20;
+const LOOP_END = 23;
+
+// Plays for a while and reports where the clock went. Sampling from inside the
+// page keeps the timing tight; a round trip per sample would be too coarse to
+// catch an overshoot.
+const playAndSample = (count, intervalMs) => `
+  (async () => {
+    const v = document.querySelector('video');
+    v.muted = true;
+    await v.play().catch(() => {});
+    const out = [];
+    for (let i = 0; i < ${count}; i++) {
+      out.push({ t: Number(v.currentTime.toFixed(3)), rate: v.playbackRate });
+      await new Promise((r) => setTimeout(r, ${intervalMs}));
+    }
+    v.pause();
+    return out;
+  })()
+`;
+
+module.exports = (site) => {
+  h.describe(`${site.label}: loop`, () => {
+    h.it('starts looping as soon as B is set', async (page) => {
+      await h.hoverVideo(page);
+      await h.markLoop(page, LOOP_START, LOOP_END);
+      const state = await h.barState(page);
+      h.equal(state.looping, true, 'setting B should start the loop with no extra step');
+      await page.key('|');
+    });
+
+    h.it('keeps playback inside A and B', async (page) => {
+      await h.hoverVideo(page);
+      await h.markLoop(page, LOOP_START, LOOP_END);
+      h.equal((await h.barState(page)).looping, true, 'the loop should be running');
+
+      const samples = await page.eval(playAndSample(40, 150), { label: 'loop samples' });
+      const times = samples.map((s) => s.t);
+      h.assert(times.length === 40, `collected ${times.length} samples`);
+
+      // Some overshoot is unavoidable: the watcher can only act once the video
+      // has already passed B. Being a full second past it is a broken loop.
+      const strays = times.filter((t) => t < LOOP_START - 0.5 || t > LOOP_END + 0.5);
+      h.assert(strays.length === 0,
+        `playback left the ${LOOP_START}-${LOOP_END}s loop: ${JSON.stringify(strays.slice(0, 6))}`);
+      // A loop that never advances is not looping either.
+      h.assert(new Set(times).size > 5, 'the video should actually be playing inside the loop');
+      await page.key('|');
+    });
+
+    h.it('wraps from B back to A rather than stopping', async (page) => {
+      await h.hoverVideo(page);
+      await h.markLoop(page, LOOP_START, LOOP_END);
+      const wrapped = await page.eval(`
+        (async () => {
+          const v = document.querySelector('video');
+          v.muted = true;
+          v.currentTime = ${LOOP_END - 0.3};
+          await new Promise((r) => setTimeout(r, 400));
+          await v.play().catch(() => {});
+          let sawLate = false;
+          for (let i = 0; i < 40; i++) {
+            const t = v.currentTime;
+            if (t > ${LOOP_END} - 0.4) sawLate = true;
+            if (sawLate && t < ${LOOP_START} + 0.6) { v.pause(); return true; }
+            await new Promise((r) => setTimeout(r, 120));
+          }
+          v.pause();
+          return false;
+        })()
+      `, { label: 'wrap' });
+      h.equal(wrapped, true, 'reaching B should send playback back to A');
+      await page.key('|');
+    });
+
+    h.it('stops confining playback once the loop is toggled off', async (page) => {
+      await h.hoverVideo(page);
+      await h.markLoop(page, LOOP_START, LOOP_END);
+      await page.key('\\');
+      await h.sleep(500);
+      const off = await h.barState(page);
+      h.equal(off.looping, false, 'backslash should switch the running loop off');
+
+      // With the loop off, playback must be free to run past B.
+      await h.setCurrentTime(page, LOOP_END - 0.3);
+      const samples = await page.eval(playAndSample(20, 150), { label: 'free samples' });
+      const maxT = Math.max(...samples.map((s) => s.t));
+      h.assert(maxT > LOOP_END + 0.4,
+        `with the loop off playback should pass B; it stopped at ${maxT}`);
+
+      // And the markers are still there to switch back on.
+      const still = await h.barState(page);
+      h.equal(still.hasLoop, true, 'toggling the loop off should not discard the markers');
+      await page.key('|');
+    });
+
+    h.it('jumps back to A with Home', async (page) => {
+      await h.hoverVideo(page);
+      await h.markLoop(page, LOOP_START, LOOP_END);
+      await h.setCurrentTime(page, LOOP_END - 0.2);
+      await page.key('Home', { text: '', keyCode: 36, code: 'Home' });
+      await h.sleep(700);
+      const state = await h.barState(page);
+      h.close(state.currentTime, LOOP_START, 0.3, 'Home returns to A');
+      await page.key('|');
+    });
+
+    h.it('applies a loop speed from the loop menu', async (page) => {
+      await h.hoverVideo(page);
+      await h.markLoop(page, LOOP_START, LOOP_END);
+      await h.clickBarControl(page, '.ig-vc-loop-speed[data-loop-speed="0.25"]');
+      await h.sleep(600);
+
+      const samples = await page.eval(playAndSample(12, 120), { label: 'loop rates' });
+      const rates = [...new Set(samples.map((s) => s.rate))];
+      h.assert(rates.length === 1 && rates[0] === 0.25,
+        `the loop should hold 0.25x throughout, got ${JSON.stringify(rates)}`);
+      h.equal((await h.barState(page)).activeLoopSpeed, '0.25x', 'the chosen loop speed is marked active');
+
+      // Leaving the loop must give the rate back, not leave the player stuck
+      // in slow motion.
+      await page.key('\\');
+      await h.sleep(600);
+      const after = await h.barState(page);
+      h.equal(after.looping, false, 'the loop should be off');
+      h.equal(after.playbackRate, 1, 'turning the loop off restores normal speed');
+      await page.key('|');
+    });
+
+    h.it('keeps the loop speed separate from the general playback speed', async (page) => {
+      // In augment mode the host site owns playback speed and the extension
+      // deliberately does not fight it for the general rate, so there is no
+      // "general speed" of ours to come back to. stopLoopWatcher() encodes the
+      // same split.
+      if (site.expectedMode === 'augment') {
+        h.skip('augment mode leaves general playback speed to the host site');
+      }
+      await h.hoverVideo(page);
+      await page.key('|');
+      // Pick a general speed first, with no loop in play.
+      await h.clickBarControl(page, '.ig-vc-opt[data-speed="1.5"]');
+      await h.sleep(400);
+      const general = await h.barState(page);
+      h.equal(general.playbackRate, 1.5, 'the general speed control should apply');
+
+      // Now loop, which runs at its own rate.
+      await h.markLoop(page, LOOP_START, LOOP_END);
+      await h.clickBarControl(page, '.ig-vc-loop-speed[data-loop-speed="0.5"]');
+      await h.sleep(500);
+      const looping = await h.barState(page);
+      h.equal(looping.playbackRate, 0.5, 'the loop speed should take over while looping');
+
+      // Leaving the loop should restore the speed the user chose, not 1x.
+      await page.key('\\');
+      await h.sleep(600);
+      const restored = await h.barState(page);
+      h.equal(restored.playbackRate, 1.5,
+        'leaving the loop should restore the general speed the user had set');
+      await page.key('|');
+      await h.clickBarControl(page, '.ig-vc-opt[data-speed="1"]');
+    });
+
+    h.it('applies a loop speed picked while the loop is paused', async (page) => {
+      // Picking a practice speed used to light the button and change nothing
+      // whenever the loop toggle was off: the control claimed an effect it had
+      // not had. Choosing a speed is a request to hear the loop at it.
+      await h.hoverVideo(page);
+      await h.markLoop(page, LOOP_START, LOOP_END);
+      await page.key('\\');
+      await h.sleep(500);
+      h.equal((await h.barState(page)).looping, false, 'the loop should be off to start');
+
+      await h.clickBarControl(page, '.ig-vc-loop-speed[data-loop-speed="0.25"]');
+      await h.sleep(600);
+      const after = await h.barState(page);
+      h.equal(after.activeLoopSpeed, '0.25x', 'the chosen speed should be marked');
+      h.equal(after.looping, true, 'choosing a practice speed should engage the loop');
+      h.equal(after.playbackRate, 0.25, 'the chosen speed should actually apply');
+      await page.key('|');
+    });
+
+    h.it('marks loop speeds unavailable when there is no loop to apply them to', async (page) => {
+      await h.hoverVideo(page);
+      await page.key('|');
+      await h.sleep(400);
+      const unavailable = await page.eval(h.barExpr(`
+        const opts = [...bar.querySelectorAll('.ig-vc-loop-speed')];
+        return {
+          total: opts.length,
+          unavailable: opts.filter((o) => o.classList.contains('unavailable')).length
+        };
+      `), { label: 'loop speed state' });
+      h.assert(unavailable.total > 0, 'there should be loop speed options');
+      h.equal(unavailable.unavailable, unavailable.total,
+        'with no loop marked, every loop speed should read as unavailable rather than active');
+    });
+
+    h.it('refuses a loop shorter than a few frames', async (page) => {
+      await h.hoverVideo(page);
+      await page.key('|');
+      await h.setCurrentTime(page, 20);
+      await page.key('[');
+      // Same frame: there is nothing to loop over.
+      await page.key(']');
+      await h.sleep(400);
+      const state = await h.barState(page);
+      h.equal(state.hasLoop, false, 'a zero-length loop should not count as a loop');
+      h.equal(state.looping, false, 'a zero-length loop should not start looping');
+      await page.key('|');
+    });
+  });
+};
