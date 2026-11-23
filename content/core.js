@@ -385,6 +385,38 @@
     return (valueText.match(/\d{1,2}:\d{2}/g) || []).length >= 1;
   };
 
+  // Whether an ancestor of a site's progress slider is still part of its
+  // control strip, and so safe to hide along with the slider, or whether the
+  // walk has climbed out into the player itself.
+  //
+  // Kept here, away from the DOM, because this decision is where the walk went
+  // wrong on Facebook's feed: an earlier version stopped at the first ancestor
+  // holding a button, which on a feed post is the very row carrying Play,
+  // Settings, Fullscreen and Unmute, so their row kept drawing under our bar.
+  // Buttons are deliberately not a signal — a control strip is made of them.
+  //
+  // The caller passes measurements rather than elements so every branch can be
+  // tested against numbers taken off the live sites.
+  core.isControlStripAncestor = ({
+    containsVideo = false,
+    height = 0,
+    ceiling = Infinity,
+    hasLink = false,
+    textLength = 0,
+    maxTextLength = 40
+  } = {}) => {
+    // The player itself, on a surface where the video is a real descendant.
+    if (containsVideo) return false;
+    // The player itself, on a surface where the video sits in a sibling
+    // subtree and the only thing separating the two is size.
+    if (Number.isFinite(ceiling) && height > ceiling) return false;
+    // A caption or author overlay: sentences and profile links, where a
+    // control strip carries a timestamp and nothing else.
+    if (hasLink) return false;
+    if (textLength > maxTextLength) return false;
+    return true;
+  };
+
   // Which site adapter a hostname belongs to, or null when unsupported.
   // Matched on exact host or a dot-prefixed suffix so that a lookalike such as
   // notinstagram.com or instagram.com.example.net never resolves.

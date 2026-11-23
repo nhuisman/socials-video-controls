@@ -606,6 +606,62 @@ group('site resolution', () => {
     assert(!core.looksLikeTimeSlider(null), 'missing attribute');
     assert(!core.looksLikeTimeSlider(undefined), 'absent');
   });
+
+  // Every number below is measured off a live page, so a DOM change that
+  // breaks the walk shows up here as a changed fixture rather than as two
+  // overlapping control bars nobody tested.
+  test('accepts a control strip holding the site\'s own buttons', () => {
+    // Facebook feed post: a 44px row inside a 559px player, carrying Play,
+    // Settings, Fullscreen, Unmute, both sliders and the "0:08 / 1:45"
+    // timestamp. This is the case an earlier button guard rejected, which left
+    // Facebook's row drawing underneath ours.
+    assert(core.isControlStripAncestor({
+      containsVideo: false, height: 44, ceiling: 559 * 0.25, hasLink: false, textLength: 11
+    }), 'the 44px feed control row');
+    assert(core.isControlStripAncestor({
+      containsVideo: false, height: 24, ceiling: 559 * 0.25, hasLink: false, textLength: 11
+    }), 'and its 24px parent');
+    note('a strip is made of buttons, so buttons cannot be the signal that the walk has gone too far');
+  });
+
+  test('accepts a slider wrapper that has already been collapsed to nothing', () => {
+    // Second pass over a Reel: everything hidden on the first pass measures
+    // 0x0, so no geometric guard can carry the decision there.
+    assert(core.isControlStripAncestor({
+      containsVideo: false, height: 0, ceiling: 1191 * 0.25, hasLink: false, textLength: 0
+    }), 'collapsed Reel slider wrapper');
+  });
+
+  test('stops at the player, by descendant on one surface and by size on the other', () => {
+    // Reel: the player group really does contain the video element.
+    assert(!core.isControlStripAncestor({
+      containsVideo: true, height: 0, ceiling: 1191 * 0.25, hasLink: false, textLength: 0
+    }), 'Reel player group, caught as an ancestor of the video');
+    // Feed: the video sits in a sibling subtree, so containsVideo is false and
+    // only the height tells the player group apart from a strip.
+    assert(!core.isControlStripAncestor({
+      containsVideo: false, height: 559, ceiling: 559 * 0.25, hasLink: false, textLength: 11
+    }), 'feed player group, caught only by its height');
+    note('both guards are load-bearing: neither surface is covered by the other one');
+  });
+
+  test('stops at a caption or author overlay', () => {
+    assert(!core.isControlStripAncestor({
+      containsVideo: false, height: 40, ceiling: 1191 * 0.25, hasLink: false, textLength: 372
+    }), 'a Reel caption: 372 characters');
+    assert(!core.isControlStripAncestor({
+      containsVideo: false, height: 40, ceiling: 1191 * 0.25, hasLink: true, textLength: 0
+    }), 'an author row: carries a profile link');
+    note('a control strip carries a timestamp; an overlay carries sentences and links');
+  });
+
+  test('treats an unmeasurable video as no height limit at all', () => {
+    assert(core.isControlStripAncestor({
+      containsVideo: false, height: 900, ceiling: Infinity, hasLink: false, textLength: 0
+    }), 'no ceiling to breach');
+    assert(!core.isControlStripAncestor({ containsVideo: true, ceiling: Infinity }), 'still stops on the video');
+    note('a 0-height video yields no ratio, so the other guards have to hold');
+  });
 });
 
 group('A-B loop', () => {

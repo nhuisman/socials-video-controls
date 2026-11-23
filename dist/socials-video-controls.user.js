@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Socials Video Controls
 // @namespace    https://github.com/nhuisman/socials-video-controls
-// @version      1.20.0
+// @version      1.20.1
 // @description  Frame-accurate video navigation, A-B loop practice, clip export and theater mode for Instagram and Facebook.
 // @author       Nathan Huisman
 // @match        *://*.instagram.com/*
@@ -528,6 +528,38 @@
         return (valueText.match(/\d{1,2}:\d{2}/g) || []).length >= 1;
       };
 
+      // Whether an ancestor of a site's progress slider is still part of its
+      // control strip, and so safe to hide along with the slider, or whether the
+      // walk has climbed out into the player itself.
+      //
+      // Kept here, away from the DOM, because this decision is where the walk went
+      // wrong on Facebook's feed: an earlier version stopped at the first ancestor
+      // holding a button, which on a feed post is the very row carrying Play,
+      // Settings, Fullscreen and Unmute, so their row kept drawing under our bar.
+      // Buttons are deliberately not a signal — a control strip is made of them.
+      //
+      // The caller passes measurements rather than elements so every branch can be
+      // tested against numbers taken off the live sites.
+      core.isControlStripAncestor = ({
+        containsVideo = false,
+        height = 0,
+        ceiling = Infinity,
+        hasLink = false,
+        textLength = 0,
+        maxTextLength = 40
+      } = {}) => {
+        // The player itself, on a surface where the video is a real descendant.
+        if (containsVideo) return false;
+        // The player itself, on a surface where the video sits in a sibling
+        // subtree and the only thing separating the two is size.
+        if (Number.isFinite(ceiling) && height > ceiling) return false;
+        // A caption or author overlay: sentences and profile links, where a
+        // control strip carries a timestamp and nothing else.
+        if (hasLink) return false;
+        if (textLength > maxTextLength) return false;
+        return true;
+      };
+
       // Which site adapter a hostname belongs to, or null when unsupported.
       // Matched on exact host or a dot-prefixed suffix so that a lookalike such as
       // notinstagram.com or instagram.com.example.net never resolves.
@@ -582,6 +614,12 @@
       const FPS_MAX_SAMPLES = 24;
       const KEYBOARD_REVEAL_MS = 4000;
       const SEEK_STALL_MS = 1000;
+
+      // Bounds on what counts as a site's own control strip, for the structural
+      // walk in facebook.nativeControlsToHide. Both are measured; see the comment
+      // there for the numbers behind them.
+      const STRIP_MAX_HEIGHT_FRACTION = 0.25;
+      const STRIP_MAX_TEXT_LENGTH = 40;
 
       // A-B loop, for practising a single move
       const LOOP_MIN_FRAMES = 3;
@@ -1030,35 +1068,37 @@
           },
 
           // Our bar sits at the bottom of the player, which is exactly where
-          // Facebook draws its progress slider -- measured at the video's last
-          // 20px -- so the two would overlap. Theirs is hidden.
+          // Facebook draws its own controls, so theirs are hidden.
           //
           // Found structurally rather than by aria-label, so it survives a
-          // non-English UI: from the time-like slider, walk up while the ancestor
-          // contains no buttons and no video. On a live Reel that stops at a
-          // 654x20 strip holding nothing but the progress bar; one level higher is
-          // the whole 670x1191 player with 29 buttons in it, which must not be
-          // touched.
+          // non-English UI: ascend from the time-like slider for as long as
+          // core.isControlStripAncestor still recognises a control strip, and hide
+          // the outermost one. That predicate carries the reasoning and the
+          // measured bounds; this loop only supplies it with measurements.
           //
-          // Their mute button is deliberately left alone: it is a 44x44 overlay in
-          // the TOP-left corner, so it does not collide with our bar, and the only
-          // handle on it is its English label.
+          // Hiding the row costs Facebook's Settings menu, the one control of
+          // theirs our bar does not replace. Shifting the row up by the bar's
+          // height would keep it, and the CSS still carries a rule that did that
+          // on an older DOM; its selectors need a real <button> and Facebook now
+          // builds these as [role="button"] divs, so it matches nothing here. It
+          // stays because it still matches on Instagram.
           nativeControlsToHide(video, container) {
             const slider = this.nativeSeekSlider(video, container);
             if (!slider) return [];
-            // Only ascend while the ancestor is still plainly just the progress
-            // strip. The height ceiling is the load-bearing guard: the strip is
-            // 20px of a 1191px player (measured), so anything approaching the
-            // player's own height is not a control strip whatever else it contains.
             const videoHeight = video.getBoundingClientRect().height || 0;
-            const ceiling = videoHeight > 0 ? videoHeight * 0.25 : Infinity;
+            const ceiling = videoHeight > 0 ? videoHeight * STRIP_MAX_HEIGHT_FRACTION : Infinity;
             let outermost = slider;
             let cur = slider.parentElement;
             for (let i = 0; i < 6 && cur && cur !== document.body; i++) {
-              if (cur.contains(video)) break;
-              if (cur.querySelector('video')) break;
-              if (cur.querySelector('[role="button"], button')) break;
-              if (cur.getBoundingClientRect().height > ceiling) break;
+              const ok = core.isControlStripAncestor({
+                containsVideo: cur.contains(video) || Boolean(cur.querySelector('video')),
+                height: cur.getBoundingClientRect().height,
+                ceiling,
+                hasLink: Boolean(cur.querySelector('a[href]')),
+                textLength: (cur.textContent || '').trim().length,
+                maxTextLength: STRIP_MAX_TEXT_LENGTH
+              });
+              if (!ok) break;
               outermost = cur;
               cur = cur.parentElement;
             }

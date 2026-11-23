@@ -166,6 +166,32 @@ point of use in `cdp.js` and `harness.js`.
     `video.play()` does the same, so it is the site and not us. A real
     dispatched click plays and keeps playing. Use `h.clickBarControlReal` for
     anything gated on user activation.
+14. **Facebook has two player surfaces and the suite only drives one.** The
+    fixture is a Reel permalink, and Facebook now redirects classic
+    `/<page>/videos/<id>` permalinks to `/reel/<id>` as well, so nothing in
+    the suite reaches a feed post. The two DOMs differ in ways that break
+    structural selectors written against one of them:
+    - A feed post's player group does **not** contain the `<video>` element —
+      it sits in a sibling subtree — so `ancestor.contains(video)` never fires
+      while walking up. On a Reel it does. Any walk out of the player needs a
+      size guard as well.
+    - Facebook builds its controls as `[role="button"]` divs, never real
+      `<button>` elements, on both surfaces. A selector using `:has(button)`
+      matches nothing. The CSS shift rule in `content.css` still uses one; it
+      survives only because it matches on Instagram.
+    - A feed post draws Play, Settings, Fullscreen and Unmute in a 44px row at
+      the bottom of the video. A Reel draws no such row.
+    This is how the overlapping-control-bars bug shipped. The decision the
+    walk makes now lives in `core.isControlStripAncestor`, tested against
+    measurements from both surfaces, because a browser spec cannot reach one
+    of them.
+15. **Hovering a feed video under CDP is unreliable.** The feed re-renders
+    under a stationary pointer, so a dispatched `mouseMoved` reveals the bar
+    perhaps one attempt in six. Retry the hover and assert a bar is actually
+    revealed before measuring; a collision count of zero against a hidden bar
+    is meaningless. Hidden bars also sit slid down by `translateY(100%)` at
+    `opacity: 0`, so their rects overlap page content that nobody can see —
+    filter on computed opacity and transform, not just on geometry.
 
 ## The userscript bundle
 
@@ -317,6 +343,16 @@ Live issues, so a red test here may be expected rather than new:
   Instagram for this reason, reporting the measured track width. Fixing it
   needs container queries to drop controls at narrow widths.
 - **English-only `aria-label` selectors**, as above.
+- **No browser coverage of Facebook's feed**, which is where most videos are
+  actually watched. See harness trap 14: the suite cannot reach a feed post,
+  and hover there is too flaky to assert against. Changes to the Facebook
+  adapter's structural walks need a manual check on `https://www.facebook.com/`
+  as well as on the Reel fixture.
+- **Facebook's Reel navigation arrows sit on our end buttons.** The Previous
+  and Next items buttons are 40x40 and straddle the video's bottom edge, at the
+  same x as our jump-to-A and fullscreen buttons. Measured on the Reel fixture;
+  not yet fixed. Insetting our end buttons on Facebook is the likely fix rather
+  than hiding their navigation.
 
 ## Measurements worth keeping
 
