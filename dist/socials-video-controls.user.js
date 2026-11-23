@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Socials Video Controls
 // @namespace    https://github.com/nhuisman/socials-video-controls
-// @version      1.16.0
+// @version      1.17.0
 // @description  Frame-accurate video navigation, A-B loop practice, clip export and theater mode for Instagram and Facebook.
 // @author       Nathan Huisman
 // @match        *://*.instagram.com/*
