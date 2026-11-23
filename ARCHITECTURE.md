@@ -321,7 +321,23 @@ Still not automated: entering real fullscreen, which Chrome refuses to grant to
 synthetic input, and anything requiring a clipboard read. `AGENTS.md` records
 why, along with the harness traps worth knowing before writing a new spec.
 
----
+### Touch mode is not covered by either suite
+
+The harness drives Chromium, and touch mode ships to Safari. Chromium with
+iPhone viewport metrics and touch emulation exercises the right CSS and the
+right code branches, but it is not WebKit, and the difference has already cost
+real time: the `fastSeek` drag bug above lived in a branch Chromium never takes.
+Four consecutive reported bugs failed to reproduce in the harness.
+
+To exercise WebKit without an iOS device, install
+[Userscripts](https://apps.apple.com/us/app/userscripts/id1463298887) from the
+Mac App Store, drop `dist/socials-video-controls.user.js` in its folder, and use
+Safari's **Develop → Responsive Design Mode** for an iPhone viewport with touch
+events. That runs the same engine as Safari and Orion on iOS.
+
+For a bug that will not reproduce, `tools/diagnose.js` pastes into Safari's Web
+Inspector console and records 30 seconds of media events, bar state, and stack
+traces of whatever called `play()` or `pause()`.
 
 ---
 

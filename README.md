@@ -27,20 +27,39 @@ time. Works on desktop as an extension and on iPhone or iPad as a userscript.
   move. Markers are soft: set them roughly, then refine.
 - **Frame-by-frame stepping**, with the frame rate measured off the video rather
   than guessed, so steps do not drift or repeat.
-- **Smooth jog scrubbing** on a held key, and live drag scrubbing where the
-  picture follows the pointer instead of waiting for release.
+- **Smooth jog scrubbing** on a held key or a held button, and live drag
+  scrubbing where the picture follows your finger or pointer instead of waiting
+  for release.
 - **Speed from 0.1× to 2×**, which applies to loops too.
 - **A real seek timeline** with a buffered-range indicator, on sites that ship
   almost no controls.
 - **Shareable loop links** — a URL that reopens the video on the move.
-- **Clip export** of the marked segment (desktop only).
+- **Clip export** of the marked segment.
 - **Theater mode** that fills the screen without hiding the browser.
 - **Persistent volume and speed** across videos and sessions.
 
-It makes **no network requests of any kind**. See
-[PRIVACY.md](PRIVACY.md).
+It makes **no network requests of any kind**. See [PRIVACY.md](PRIVACY.md).
 
 ---
+
+## Pick your platform
+
+The two platforms get the same engine but a deliberately different interface,
+because touch has no hover to reveal a bar and no keyboard to step frames.
+
+| | [**Mobile**](#mobile) | [**Desktop**](#desktop) |
+| :--- | :--- | :--- |
+| You install | A userscript, via a userscript manager | An unpacked extension |
+| Bar appears | On tap, and whenever paused | On hover |
+| Stepping one frame | `◀∣` / `∣▶` buttons on the bar | `←` / `→` arrow keys |
+| Setting a loop | Long-press the track and drag | `[` and `]` keys |
+| Volume | Mute only | Mute button with a volume slider |
+| Clip export | Not on iOS; offered where supported | Yes |
+| Keyboard shortcuts | — | Full set |
+
+---
+
+# Mobile
 
 ## Install on iPhone or iPad
 
@@ -63,29 +82,108 @@ userscript.
 
 Re-open the same link after an update to upgrade.
 
-**Touch controls differ from desktop**, because there is no hover to reveal the
-bar and no keyboard to step frames:
+## Install on Android
 
-| On touch | |
+Chrome and most Chromium browsers on Android have no extension support at all,
+so the route is a userscript manager in a browser that does. **Firefox for
+Android with Tampermonkey** is the straightforward one — install Tampermonkey
+from addons.mozilla.org, then open the `.user.js` link above. Brave for Android
+has extension support behind `brave://flags/#brave-android-extensions`, but the
+first phase targets tablets.
+
+Clip export is not ruled out on Android the way it is on iOS. The `clip` button
+hides itself only when the browser has no `HTMLMediaElement.captureStream`,
+which is an iOS/WebKit limitation rather than a mobile one — so on Android the
+button appears if the engine supports it.
+
+> Untested by me. The userscript carries no platform-specific code and decides
+> what to offer by feature detection, so it should behave sensibly, but treat
+> that as a reasonable expectation rather than a verified claim.
+
+## The controls
+
+Tap the video to show the bar. It hides again while playing, and stays up
+whenever the video is paused, a menu is open, or you are dragging.
+
+<p align="center">
+  <img src="docs/images/mobile-controls.png" alt="The touch control bar, with every control numbered" width="640">
+</p>
+
+| # | Control | What it does |
+| :--- | :--- | :--- |
+| 1 | Seek track | Drag to scrub — the picture follows your finger. Carries the loop span, both handles, the playhead and the buffered range. Long-press to paint a loop. |
+| 2 | Loop start, **A** | Drag to move the start of the loop. The frame you are setting is shown as you drag. |
+| 3 | Loop end, **B** | Drag to move the end of the loop. |
+| 4 | Readout | Position and duration. Gains decimals while you are stepping frames. |
+| 5 | Jump to A | Snaps back to the loop start. Leftmost because it is the one you press most while practising. |
+| 6 | Play / pause | |
+| 7 | Step back | Tap for exactly one frame back, hold to jog scrub. Mobile only — this is the `←` key's job on desktop. |
+| 8 | Step forward | Tap for one frame forward, hold to jog scrub. |
+| 9 | Mute | Mute only. iOS will not let a page set the volume, so there is no slider. |
+| 10 | Speed | Opens the speed menu. |
+| 11 | Loop | Opens the loop menu. |
+| 12 | Link | Copies a URL that reopens the video at this loop, at this speed. Appears once both A and B are set. |
+| 13 | Fullscreen | Real fullscreen. Theater mode — which covers the page but keeps the browser visible — is on `t` on desktop. |
+
+Controls 5 and 7 use a similar icon: the first is *jump to the loop start*, the
+third is *back one frame*.
+
+### The two menus
+
+Tap the speed button or the loop button to open its menu; tap again to close.
+
+<p align="center">
+  <img src="docs/images/mobile-loop-menu.png" alt="The loop menu: loop, A, B, clr, clip, fit" width="300">
+  &nbsp;&nbsp;
+  <img src="docs/images/mobile-speed-menu.png" alt="The speed menu, 0.1x through 2x" width="300">
+</p>
+
+| Loop menu | |
 | :--- | :--- |
-| Tap the video | Show the control bar (it hides again while playing) |
-| `◀∣` `∣▶` buttons | Tap for one frame, hold to scrub — the arrow keys' job |
-| Long-press the track | Start painting a loop: A lands under your finger, drag and lift to set B |
-| Tap the speed or loop button | Opens its menu; loop on/off lives inside the loop menu |
+| `loop` | Start and stop looping. Mobile only — on desktop the bar's loop button toggles directly. |
+| `A` | Set the loop start at the current frame |
+| `B` | Set the loop end at the current frame |
+| `clr` | Clear both markers |
+| `clip` | Export the marked segment as a file. Hidden on iOS, which has no `captureStream` to record from. |
+| `fit` / `full` | Zoom the timeline around a tight loop, or back out to the whole video |
 
-Clip export is hidden on iOS: Safari does not implement
-`HTMLMediaElement.captureStream`, so there is nothing to record from.
+The speed menu runs `0.1×`, `0.25×`, `0.5×`, `0.75×`, `1×`, `1.25×`, `1.5×`,
+`2×`, and applies to loops as well as normal playback.
 
-### Testing it on a Mac first
+## Creating a loop on mobile
 
-Userscripts is also on the Mac App Store. Drop the same file in its folder and
-use Safari's **Develop → Responsive Design Mode** to get an iPhone viewport with
-touch events. That exercises WebKit, the same engine Safari and Orion use,
-without an iOS install.
+1. **Long-press the seek track** where the move starts. A lands under your
+   finger and the timeline zooms in around it.
+2. **Drag to where the move ends and lift.** That sets B, and looping starts
+   immediately — marking the end of a move is when you want to begin practising
+   it.
+3. **Refine with `◀∣` and `∣▶`.** Step to the exact frame, then open the loop
+   menu and tap `A` or `B` to move that marker to where you are. Or drag the
+   handles directly; the picture follows the handle, so you can see the frame
+   you are setting.
+4. **Slow it down** with the speed button. A quarter speed is the point of the
+   whole feature.
+5. **Jump to A** (control 5) restarts the loop; `loop` in the menu stops and
+   starts it; `clr` clears both markers.
+6. **Link** (control 12) copies a URL that reopens the video on this loop — for
+   sending someone a specific eight bars.
+
+A loop under three frames is refused, because it thrashes the decoder and shows
+nothing useful. The timeline zooms in automatically when the handles get too
+close together to aim at.
+
+> **About these screenshots.** They are captured from Chromium driven with
+> iPhone viewport metrics and touch emulation, against a synthetic test video —
+> not from real Safari, and not from a real Instagram post. The repository is
+> public, so shooting a logged-in session would publish account state and
+> someone else's video. The layout, sizes and controls are the real touch mode;
+> the colour bars are a test pattern.
 
 ---
 
-## Install on desktop
+# Desktop
+
+## Install
 
 Chrome, Edge, Brave, Opera, or any Chromium browser:
 
@@ -98,26 +196,26 @@ Chrome, Edge, Brave, Opera, or any Chromium browser:
 4. Click **Load unpacked** and pick the cloned folder.
 5. Open a video post or Reel.
 
----
+## The controls
 
-## Using the controls
-
-The bar appears at the bottom of the player when you hover it (or tap, on
-touch).
+The bar appears at the bottom of the player when you hover it.
 
 | Control | What it does |
 | :--- | :--- |
-| Jump-to-A | Snaps back to the loop start. Leftmost, because it is the one you press most while practising. |
+| Jump to A | Snaps back to the loop start. Leftmost, because it is the one you press most while practising. |
 | Play / pause | Also `Space`. |
 | Readout | Position and duration, gaining decimals while you step frames. |
-| Seek track | Drag to scrub. Carries the loop span, both handles and the playhead. |
-| Mute | Volume slider on desktop; mute only on iOS, which will not let a page set volume. |
+| Seek track | Drag to scrub. Carries the loop span, both handles, the playhead and the buffered range. |
+| Mute | Hover for a volume slider. |
 | Speed | `0.1×` to `2×`. Applies to loops as well. |
-| Loop | Loop controls: `A`, `B`, `clr`, `clip` and the timeline zoom switch. |
-| Link | Copies a URL that reopens the video at this loop. Appears once A and B are set. |
-| Theater | Fills the screen with just the video. Real fullscreen is inside that overlay. |
+| Loop | **Click toggles looping. Right-click clears both markers.** Hover opens the menu: `A`, `B`, `clr`, `clip` and the `fit` timeline zoom. |
+| Link | Copies a URL that reopens the video at this loop, at this speed. Appears once A and B are set. |
+| Fullscreen | Real fullscreen on click. **Right-click, or `t`, for theater mode** — fills the screen but keeps the browser's tabs and address bar visible. |
 
-### Keyboard shortcuts
+Desktop has no frame-step buttons: the arrow keys do that job and do it better,
+with tap-to-step and hold-to-scrub on the same key.
+
+## Keyboard shortcuts
 
 | Key | Action |
 | :--- | :--- |
@@ -142,7 +240,7 @@ combinations pass through to the browser.
 it stays muted until you deliberately resume playback. A half-speed soundtrack
 during a jog scrub is noise, and a single frame of audio is a click.
 
-### Practising a move
+## Creating a loop on desktop
 
 1. Play until just before the move and press `[` to set the start.
 2. Let it run past the end and press `]`. **Looping starts immediately** —
@@ -156,6 +254,7 @@ during a jog scrub is noise, and a single frame of audio is a click.
    markers.
 6. The **link** button copies a URL that reopens the video on this loop, at this
    speed — useful for sending someone a specific eight bars.
+7. `clip` in the loop menu exports the marked segment as a file.
 
 A loop under three frames is refused, because it thrashes the decoder and shows
 nothing useful. The timeline zooms in automatically when the handles get too
