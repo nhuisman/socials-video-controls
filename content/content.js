@@ -1675,11 +1675,37 @@
       loopRafHandle = null;
       if (!looping) return;
       const range = loopRange();
-      if (range && !seekBlocked()
-          && core.loopShouldRestart({ currentTime: video.currentTime, loopEnd: range.end, paused: video.paused })) {
-        intendedFrame = null;
-        pendingDelta = 0;
-        beginSeek(range.start);
+      if (range && !seekBlocked()) {
+        // Reuses the watcher's own threshold. `paused: false` because the
+        // question here is only whether the clock has reached B, not whether to
+        // act on it -- that is decided below.
+        const atOrPastEnd = core.loopShouldRestart({
+          currentTime: video.currentTime,
+          loopEnd: range.end,
+          paused: false
+        });
+        // Anything that owns the playhead right now: a seek drag, a handle
+        // drag, a held-key scrub, or the touch loop paint, which runs through
+        // the seek drag and so shows up as dragTargetTime.
+        const userOwnsPlayhead = dragTargetTime !== null || trimDrag !== null || scrubbing;
+
+        // Restarting while paused is the point, not an accident.
+        //
+        // Stopping a loop leaves the playhead wherever it was, which is usually
+        // at or just past B. Resuming from there used to fire this seek on the
+        // very next frame, racing playback that had only just started -- and a
+        // report of Instagram's own centre play arrow doing nothing in loop mode
+        // fits that exactly: the video starts, is seeked immediately, and the
+        // site puts it back to paused.
+        //
+        // Doing it while paused costs nothing, since a seek with no playback to
+        // interrupt is free, and it means resuming always starts from inside
+        // the loop with no seek pending.
+        if (atOrPastEnd && !userOwnsPlayhead) {
+          intendedFrame = null;
+          pendingDelta = 0;
+          beginSeek(range.start);
+        }
       }
       loopRafHandle = requestAnimationFrame(loopTick);
     };
