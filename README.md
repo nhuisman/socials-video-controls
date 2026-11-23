@@ -114,7 +114,9 @@ A tap and a hold do deliberately different things. A tap issues one precise seek
 
 **Keyboard navigation is silent.** The first keyboard move mutes the video and it stays muted until playback is deliberately resumed — with `Space`, the play button, or the host site's own. A half-speed soundtrack during a jog scrub is noise, and a single frame's worth of audio is a click. Muting is re-asserted on every keyboard move rather than only the first, since the site or you may unmute in between.
 
-While the keyboard is in use the control bar surfaces on its own and the readout switches to a precise form showing the frame index, for example `0:04.53 / 0:12 · f136`.
+While the keyboard is in use the control bar surfaces on its own and the readout gains sub-second precision, for example `0:04.53 / 0:12`, because whole seconds cannot tell one frame from the next.
+
+It used to append a frame index — `0:04.53 / 0:12 · f136` — and revert a few seconds later. That read as the time disappearing and being replaced by something cryptic, so the readout is now always a position and a duration, and only the precision changes.
 
 ### Which player the keys act on
 
@@ -221,7 +223,7 @@ Dismiss with `Esc`, the close button, or a click on the backdrop.
 | Instagram | **Replace** | Full control bar: seek timeline, volume, speed, theater mode, A-B loop with clip export, frame stepping and jog scrubbing |
 | Facebook | **Replace** | The same, with Facebook's own progress slider hidden where the bar takes its place |
 
-Both sites now get the same bar at the bottom of the player. Facebook ran in **augment** mode for a while — a stripped bar pinned to the top-left, offering only the frame readout and the loop controls, leaving their player untouched — because their player already ships a progress bar and volume, and because a volume set by the extension was reverted within about a second, which would have made our volume slider look broken.
+Both sites now get the same bar at the bottom of the player. Facebook ran in **augment** mode for a while — a stripped bar pinned to the top-left, offering only the time readout and the loop controls, leaving their player untouched — because their player already ships a progress bar and volume, and because a volume set by the extension was reverted within about a second, which would have made our volume slider look broken.
 
 Re-measured on a live Reel, that no longer happens: `volume` holds at 0.3 across twelve samples over three seconds, and `playbackRate` and `muted` stick as they always did. With the reason gone, the asymmetry went with it.
 

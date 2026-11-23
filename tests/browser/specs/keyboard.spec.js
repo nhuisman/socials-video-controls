@@ -12,43 +12,63 @@ const h = require('../harness');
 module.exports = (site) => {
   h.describe(`${site.label}: keyboard`, () => {
     h.it('steps one frame per tap and ten with shift', async (page) => {
+      // Asserted on currentTime rather than on a frame index in the readout.
+      // The readout used to carry one and no longer does -- it always shows
+      // time now -- and currentTime is the better reference anyway: it is the
+      // thing stepping actually has to get right.
       await h.hoverVideo(page);
       await h.setCurrentTime(page, 12);
 
-      const fps = await page.eval(`
-        (() => {
-          const bar = ${h.ACTIVE_BAR};
-          const m = bar && /f(\\d+)/.exec(bar.querySelector('.ig-vc-time').textContent);
-          return m ? Number(m[1]) : null;
-        })()
-      `, { label: 'frame readout' });
-      // The readout only shows a frame index once frame mode is on, which a
-      // step turns on. Before the first step there is nothing to read.
-      h.equal(fps, null, 'frame readout appears only after a step');
+      const now = async () => (await h.barState(page)).currentTime;
+      const key = (shift) => page.send('Input.dispatchKeyEvent', {
+        type: 'keyDown', key: 'ArrowRight', code: 'ArrowRight', windowsVirtualKeyCode: 39, ...(shift ? { modifiers: 8 } : {})
+      }).then(() => h.sleep(60)).then(() => page.send('Input.dispatchKeyEvent', {
+        type: 'keyUp', key: 'ArrowRight', code: 'ArrowRight', windowsVirtualKeyCode: 39, ...(shift ? { modifiers: 8 } : {})
+      })).then(() => h.sleep(700));
 
+      // The first step from an arbitrary position both snaps to a frame centre
+      // and advances, so its delta can exceed one frame. Discard it and measure
+      // from an aligned start -- measured 0.0500s for that first step on a 30fps
+      // reel, which is why this alignment matters.
+      await key(false);
+      const aligned = await now();
+
+      await key(false);
+      const afterOne = await now();
+      const frame = afterOne - aligned;
+      // One frame between 16fps and 80fps.
+      h.assert(frame > 0.012 && frame < 0.063,
+        `an aligned tap moved ${frame.toFixed(4)}s, which is not one frame`);
+
+      await key(false);
+      const afterTwo = await now();
+      h.close(afterTwo - afterOne, frame, 0.006, 'a further tap moves the same one frame');
+
+      await key(true);
+      const afterShift = await now();
+      const shiftStep = afterShift - afterTwo;
+      h.close(shiftStep / frame, 10, 1.2,
+        `shift moved ${shiftStep.toFixed(4)}s against a ${frame.toFixed(4)}s frame, which is not ten frames`);
+    });
+
+    h.it('always shows a time, never a frame index', async (page) => {
+      // The readout used to swap to "0:22.00 · f660" while stepping and revert
+      // a few seconds later, which read as the time vanishing.
+      await h.hoverVideo(page);
+      await h.setCurrentTime(page, 12);
+      const before = (await h.barState(page)).readout;
       await page.key('ArrowRight', { keyCode: 39, code: 'ArrowRight' });
-      const afterOne = await h.barState(page);
-      const frameOf = (readout) => {
-        const m = /f(\d+)/.exec(readout);
-        return m ? Number(m[1]) : null;
-      };
-      const one = frameOf(afterOne.readout);
-      h.assert(one !== null, `readout should carry a frame index, got "${afterOne.readout}"`);
+      await h.sleep(500);
+      const after = (await h.barState(page)).readout;
 
-      await page.key('ArrowRight', { keyCode: 39, code: 'ArrowRight' });
-      const afterTwo = frameOf((await h.barState(page)).readout);
-      h.equal(afterTwo - one, 1, 'a tap advances exactly one frame');
-
-      await page.send('Input.dispatchKeyEvent', {
-        type: 'keyDown', key: 'ArrowRight', code: 'ArrowRight', windowsVirtualKeyCode: 39, modifiers: 8
-      });
-      await h.sleep(60);
-      await page.send('Input.dispatchKeyEvent', {
-        type: 'keyUp', key: 'ArrowRight', code: 'ArrowRight', windowsVirtualKeyCode: 39, modifiers: 8
-      });
-      await h.sleep(900);
-      const afterShift = frameOf((await h.barState(page)).readout);
-      h.equal(afterShift - afterTwo, 10, 'shift+tap advances ten frames');
+      for (const [label, text] of [['before stepping', before], ['after stepping', after]]) {
+        h.assert(!text.includes('f'), `${label}: readout should carry no frame index, got "${text}"`);
+        h.assert(text.includes('/'), `${label}: readout should show position and duration, got "${text}"`);
+        h.assert(/\d:\d\d/.test(text), `${label}: readout should look like a time, got "${text}"`);
+      }
+      // Stepping adds sub-second precision, because whole seconds cannot tell
+      // one frame from the next.
+      h.assert(after.includes('.'), `after stepping the position should gain decimals, got "${after}"`);
     });
 
     h.it('steps backwards as far as it stepped forwards', async (page) => {
@@ -96,7 +116,7 @@ module.exports = (site) => {
       h.assert(samples.some((muted) => muted === true), 'the video is muted at some point during a jog');
     });
 
-    h.it('toggles play with space and leaves frame mode', async (page) => {
+    h.it('toggles play with space', async (page) => {
       await h.hoverVideo(page);
       await h.setCurrentTime(page, 8);
       await page.key('ArrowRight', { keyCode: 39, code: 'ArrowRight' });

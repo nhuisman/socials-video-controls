@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Socials Video Controls
 // @namespace    https://github.com/nhuisman/socials-video-controls
-// @version      1.18.1
+// @version      1.19.0
 // @description  Frame-accurate video navigation, A-B loop practice, clip export and theater mode for Instagram and Facebook.
 // @author       Nathan Huisman
 // @match        *://*.instagram.com/*
@@ -1211,7 +1211,7 @@
         }
 
         const frameClock = createFrameClock(video);
-        let frameMode = false;
+        let preciseTime = false;
         let revealTimer = null;
         // Held-key stepping collapses into one in-flight seek at a time, so intent has
         // to be tracked separately from video.currentTime, which lags behind it.
@@ -1480,9 +1480,14 @@
             : 'Fullscreen  ·  right-click or  t  for theater mode, which covers the page but keeps the browser visible';
         }
 
-        const renderTime = (t) => (frameMode
-          ? `${formatTime(t, 2)} · f${Math.floor(t * frameClock.fps + 1e-6)}`
-          : `${formatTime(t)} / ${formatTime(video.duration)}`);
+        // Always position and duration, never a frame index.
+        //
+        // The readout used to swap to "0:22.00 · f660" while stepping and revert a
+        // few seconds later, which read as the time disappearing and being replaced
+        // by something cryptic. Frame stepping still needs sub-second precision to
+        // be legible, so that is all the precise mode changes now: two decimals on
+        // the position, with the duration kept in place.
+        const renderTime = (t) => `${formatTime(t, preciseTime ? 2 : 0)} / ${formatTime(video.duration)}`;
 
         // Issues at most one drag seek at a time and always aims at the newest pointer
         // position, discarding whatever it passed through. Writing currentTime on every
@@ -1776,18 +1781,18 @@
         // Keyboard actions happen without the pointer over the player, so the bar has
         // to be revealed deliberately and then released back to hover control. Bar
         // visibility doubles as the engagement signal that gates the keyboard.
-        const revealBar = (withFrameInfo) => {
-          frameMode = withFrameInfo;
+        const revealBar = (precise) => {
+          preciseTime = precise;
           currentContainer?.classList.add('ig-vc-kb');
           currentContainer?.classList.remove('idle');
           clearTimeout(revealTimer);
           revealTimer = setTimeout(() => {
             // A long hold must not time the bar out from under an active scrub.
             if (scrubbing) {
-              revealBar(withFrameInfo);
+              revealBar(precise);
               return;
             }
-            frameMode = false;
+            preciseTime = false;
             currentContainer?.classList.remove('ig-vc-kb');
             updateTime();
           }, KEYBOARD_REVEAL_MS);
@@ -2215,6 +2220,9 @@
           return true;
         };
 
+        // True between asking for a restart seek and seeing playback survive it.
+        let loopRestartWasPlaying = false;
+
         const loopTick = () => {
           loopRafHandle = null;
           if (!looping) return;
@@ -2223,7 +2231,20 @@
               && core.loopShouldRestart({ currentTime: video.currentTime, loopEnd: range.end, paused: video.paused })) {
             intendedFrame = null;
             pendingDelta = 0;
+            loopRestartWasPlaying = true;
             beginSeek(range.start);
+          } else if (loopRestartWasPlaying) {
+            // A restart seek is a currentTime write issued the instant playback
+            // reaches B, and resuming from a position at or past B triggers one
+            // immediately. Some engines drop out of playing when seeked that
+            // early, which looks exactly like the play button doing nothing: the
+            // video starts, jumps back to A, and sits there paused.
+            //
+            // So playback is re-asserted once, only after a restart we issued while
+            // playing. Not reproducible under Chromium, which survives the seek, so
+            // this guards the behaviour rather than fixing a measured failure here.
+            loopRestartWasPlaying = false;
+            if (video.paused && !video.ended) video.play().catch(() => {});
           }
           loopRafHandle = requestAnimationFrame(loopTick);
         };
@@ -2522,7 +2543,7 @@
           const open = !wrap.classList.contains('ig-vc-open');
           for (const w of bar.querySelectorAll('.ig-vc-wrap.ig-vc-open')) w.classList.remove('ig-vc-open');
           wrap.classList.toggle('ig-vc-open', open);
-          revealBar(frameMode);
+          revealBar(preciseTime);
         };
         if (TOUCH) {
           loopToggleBtn.addEventListener('click', () => toggleMenu(loopToggleBtn));
@@ -2554,7 +2575,7 @@
           }, { signal });
           for (const evt of ['pointerup', 'pointercancel', 'pointerleave']) btn.addEventListener(evt, release, { signal });
         }
-        if (TOUCH) bar.addEventListener('pointerdown', () => revealBar(frameMode), { signal });
+        if (TOUCH) bar.addEventListener('pointerdown', () => revealBar(preciseTime), { signal });
         loopToggleBtn.addEventListener('contextmenu', clearLoop);
         clipBtn.addEventListener('click', recordClip);
         // Theater mode on the fullscreen button's right-click: a page overlay that
